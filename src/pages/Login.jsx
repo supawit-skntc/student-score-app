@@ -80,7 +80,7 @@ export default function Login({ setView }) {
                 onChange={(e) => setUsername(e.target.value)}
                 required
                 placeholder="กรอกชื่อผู้ใช้งาน"
-                className="min-h-[50px] w-full rounded-[14px] border-[1.5px] border-[#E3D9DA] bg-field px-[15px] py-[13px] text-[15px] outline-none transition focus:border-brand-500 focus:bg-white focus:shadow-[0_0_0_4px_rgba(228,187,92,.35)]"
+                className="min-h-[50px] w-full rounded-[14px] border-[1.5px] border-[#E3D9DA] bg-field px-[15px] py-[13px] text-[16px] outline-none transition focus:border-brand-500 focus:bg-white focus:shadow-[0_0_0_4px_rgba(228,187,92,.35)]"
               />
             </label>
 
@@ -92,7 +92,7 @@ export default function Login({ setView }) {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 placeholder="••••••••"
-                className="min-h-[50px] w-full rounded-[14px] border-[1.5px] border-[#E3D9DA] bg-field px-[15px] py-[13px] text-[15px] tracking-[2px] outline-none transition focus:border-brand-500 focus:bg-white focus:shadow-[0_0_0_4px_rgba(228,187,92,.35)]"
+                className="min-h-[50px] w-full rounded-[14px] border-[1.5px] border-[#E3D9DA] bg-field px-[15px] py-[13px] text-[16px] tracking-[2px] outline-none transition focus:border-brand-500 focus:bg-white focus:shadow-[0_0_0_4px_rgba(228,187,92,.35)]"
               />
             </label>
 

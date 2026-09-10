@@ -161,7 +161,9 @@ export default function DeductionForm() {
     }
   };
 
-  const inputCls = "min-h-12 w-full rounded-[13px] border-[1.5px] border-[#E3D9DA] bg-field px-3.5 py-3 text-[15px] outline-none transition focus:border-brand-500 focus:bg-white focus:shadow-[0_0_0_4px_rgba(228,187,92,.3)]";
+  // ฟอนต์ input ต้อง >= 16px เสมอ — ต่ำกว่านี้ iOS Safari จะซูมจอเข้าอัตโนมัติทุก
+  // ครั้งที่แตะโฟกัสช่องกรอก (มือถือ) ทำให้รู้สึกว่า UI ไม่พอดีกับจอ
+  const inputCls = "min-h-12 w-full rounded-[13px] border-[1.5px] border-[#E3D9DA] bg-field px-3.5 py-3 text-[16px] outline-none transition focus:border-brand-500 focus:bg-white focus:shadow-[0_0_0_4px_rgba(228,187,92,.3)]";
   const labelCls = "mb-1.5 block text-[13px] font-semibold text-ink-soft";
 
   return (
@@ -325,7 +327,7 @@ export default function DeductionForm() {
                   value={formData.otherOffense}
                   onChange={handleChange}
                   required
-                  className="min-h-12 w-full rounded-[13px] border-[1.5px] border-[#F0CDD4] bg-[#FFF7F8] px-3.5 py-3 text-[15px] outline-none transition focus:border-bad-fg focus:shadow-[0_0_0_4px_rgba(228,187,92,.3)]"
+                  className="min-h-12 w-full rounded-[13px] border-[1.5px] border-[#F0CDD4] bg-[#FFF7F8] px-3.5 py-3 text-[16px] outline-none transition focus:border-bad-fg focus:shadow-[0_0_0_4px_rgba(228,187,92,.3)]"
                   placeholder="ตัวอย่าง: นำอาหารเข้ามารับประทานในห้องปฏิบัติการคอมพิวเตอร์"
                 />
               </div>

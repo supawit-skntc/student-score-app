@@ -2,7 +2,9 @@ import React from 'react';
 import { Loader2, X, Save } from 'lucide-react';
 import { OFFENSES, findOffense } from '../data/offenses';
 
-const inputCls = "min-h-12 w-full rounded-[13px] border-[1.5px] border-[#E3D9DA] bg-field px-3.5 py-3 text-[15px] outline-none transition focus:border-brand-500 focus:bg-white focus:shadow-[0_0_0_4px_rgba(228,187,92,.3)]";
+// ฟอนต์ input ต้อง >= 16px เสมอ — ต่ำกว่านี้ iOS Safari จะซูมจอเข้าอัตโนมัติทุก
+// ครั้งที่แตะโฟกัสช่องกรอก (มือถือ) ทำให้รู้สึกว่า UI ไม่พอดีกับจอ
+const inputCls = "min-h-12 w-full rounded-[13px] border-[1.5px] border-[#E3D9DA] bg-field px-3.5 py-3 text-[16px] outline-none transition focus:border-brand-500 focus:bg-white focus:shadow-[0_0_0_4px_rgba(228,187,92,.3)]";
 const labelCls = "block text-[13px] font-semibold text-ink-soft mb-1.5";
 
 // หน้าต่างแก้ไขบันทึกการตัดคะแนน — แยกออกมาจาก Report.jsx เพราะเดิมไฟล์เดียว
@@ -107,7 +109,7 @@ export default function EditRecordModal({ record, onChange, onSubmit, onClose, i
                   required
                   value={record.otherOffense}
                   onChange={onChange}
-                  className="min-h-12 w-full rounded-[13px] border-[1.5px] border-[#F0CDD4] bg-[#FFF7F8] px-3.5 py-3 text-[15px] outline-none transition focus:border-bad-fg"
+                  className="min-h-12 w-full rounded-[13px] border-[1.5px] border-[#F0CDD4] bg-[#FFF7F8] px-3.5 py-3 text-[16px] outline-none transition focus:border-bad-fg"
                   placeholder="ตัวอย่าง: นำอาหารเข้ามารับประทานในห้องปฏิบัติการคอมพิวเตอร์"
                 />
               </div>

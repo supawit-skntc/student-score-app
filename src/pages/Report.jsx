@@ -17,7 +17,9 @@ function parsePoints(points) {
 // รายการฐานความผิด (ใช้ชุดเดียวกับหน้าบันทึกตัดคะแนน — src/data/offenses.js)
 const OFFENSE_OPTIONS = OFFENSES.map((o) => o.label);
 
-const filterCls = "min-h-[42px] rounded-[13px] border-[1.5px] border-[#EADFDF] px-3 text-[13px] font-semibold outline-none focus:border-brand-500 bg-white text-ink-soft";
+// text-[16px] (ไม่ใช่ 13px) เพราะเป็นฟอนต์ของ <select>/<input type="date"> จริง
+// — ต่ำกว่า 16px iOS Safari จะซูมจอเข้าอัตโนมัติทุกครั้งที่แตะโฟกัสบนมือถือ
+const filterCls = "min-h-[42px] rounded-[13px] border-[1.5px] border-[#EADFDF] px-3 text-[16px] font-semibold outline-none focus:border-brand-500 bg-white text-ink-soft";
 const chipCls = (active) => `min-h-[42px] rounded-[13px] px-3.5 text-[13px] font-semibold border-[1.5px] transition-colors ${
   active ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-[#EADFDF] bg-white text-ink-soft hover:bg-line-soft'
 }`;
@@ -259,7 +261,7 @@ export default function Report({ onViewStudent }) {
             <input
               type="text"
               placeholder="ค้นหารหัส, ชื่อ, ความผิด..."
-              className="w-full min-h-12 pl-[42px] pr-4 border-[1.5px] border-[#E3D9DA] rounded-[14px] focus:border-brand-500 outline-none transition text-[15px]"
+              className="w-full min-h-12 pl-[42px] pr-4 border-[1.5px] border-[#E3D9DA] rounded-[14px] focus:border-brand-500 outline-none transition text-[16px]"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />

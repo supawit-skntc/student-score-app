@@ -157,7 +157,7 @@ export default function StudentProfile({ initialStudentId }) {
           <input
             type="text"
             placeholder="ค้นหารหัสหรือชื่อนักเรียน..."
-            className="w-full min-h-12 pl-[42px] pr-4 border-[1.5px] border-[#E3D9DA] rounded-[14px] focus:border-brand-500 outline-none transition text-[15px]"
+            className="w-full min-h-12 pl-[42px] pr-4 border-[1.5px] border-[#E3D9DA] rounded-[14px] focus:border-brand-500 outline-none transition text-[16px]"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
