@@ -181,22 +181,28 @@ export default function DashboardLayout({ children, setView, view = 'dashboard' 
           {children}
         </main>
 
-        {/* --- Bottom tab bar: mobile only (below md); replaces the sidebar --- */}
-        <nav className="md:hidden shrink-0 flex items-end justify-around gap-0.5 px-1.5 pt-2 pb-2.5 bg-white/[0.97] backdrop-blur-sm border-t border-line shadow-[0_-8px_24px_-16px_rgba(56,16,26,.4)]">
-          {MOBILE_TABS_LEFT.map(({ key, label, icon: Icon }) => {
-            const active = view === key;
-            return (
-              <button
-                key={key}
-                onClick={() => goTo(key)}
-                className={`flex flex-col items-center gap-1 min-w-[60px] min-h-[52px] px-1 rounded-xl
-                  ${active ? 'bg-brand-50 text-brand-500' : 'text-ink-faint'}`}
-              >
-                <Icon size={21} strokeWidth={active ? 2.4 : 2} />
-                <span className="text-[11px] font-semibold">{label}</span>
-              </button>
-            );
-          })}
+        {/* --- Bottom tab bar: mobile only (below md); replaces the sidebar ---
+            Left/right tab groups sit in their own equal-width (1fr) columns so the
+            FAB in the middle column stays visually centered no matter how many
+            tabs end up on each side (e.g. the admin-only "users" tab dropping out
+            for regular teacher accounts used to shove the FAB off-center). */}
+        <nav className="md:hidden shrink-0 grid grid-cols-[1fr_auto_1fr] items-end gap-1 px-1.5 pt-2 pb-2.5 bg-white/[0.97] backdrop-blur-sm border-t border-line shadow-[0_-8px_24px_-16px_rgba(56,16,26,.4)]">
+          <div className="flex items-end justify-evenly">
+            {MOBILE_TABS_LEFT.map(({ key, label, icon: Icon }) => {
+              const active = view === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => goTo(key)}
+                  className={`flex flex-col items-center gap-1 min-w-[60px] min-h-[52px] px-1 rounded-xl
+                    ${active ? 'bg-brand-50 text-brand-500' : 'text-ink-faint'}`}
+                >
+                  <Icon size={21} strokeWidth={active ? 2.4 : 2} />
+                  <span className="text-[11px] font-semibold">{label}</span>
+                </button>
+              );
+            })}
+          </div>
 
           <button
             onClick={() => goTo('form')}
@@ -205,20 +211,22 @@ export default function DashboardLayout({ children, setView, view = 'dashboard' 
             <Plus size={26} />
           </button>
 
-          {mobileTabsRight.map(({ key, label, icon: Icon }) => {
-            const active = view === key;
-            return (
-              <button
-                key={key}
-                onClick={() => goTo(key)}
-                className={`flex flex-col items-center gap-1 min-w-[60px] min-h-[52px] px-1 rounded-xl
-                  ${active ? 'bg-brand-50 text-brand-500' : 'text-ink-faint'}`}
-              >
-                <Icon size={21} strokeWidth={active ? 2.4 : 2} />
-                <span className="text-[11px] font-semibold">{label}</span>
-              </button>
-            );
-          })}
+          <div className="flex items-end justify-evenly">
+            {mobileTabsRight.map(({ key, label, icon: Icon }) => {
+              const active = view === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => goTo(key)}
+                  className={`flex flex-col items-center gap-1 min-w-[60px] min-h-[52px] px-1 rounded-xl
+                    ${active ? 'bg-brand-50 text-brand-500' : 'text-ink-faint'}`}
+                >
+                  <Icon size={21} strokeWidth={active ? 2.4 : 2} />
+                  <span className="text-[11px] font-semibold">{label}</span>
+                </button>
+              );
+            })}
+          </div>
         </nav>
 
       </div>
