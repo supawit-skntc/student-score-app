@@ -1,0 +1,65 @@
+@import "tailwindcss";
+/* Font files are imported from src/main.jsx (not here) — Vite's JS asset
+   pipeline is what correctly copies the .woff files into the build. */
+
+@theme {
+  --font-sans: "Sarabun", "Noto Sans Thai", system-ui, sans-serif;
+  --font-display: "Kanit", "Sarabun", system-ui, sans-serif;
+
+  /* Brand: deep garnet — refined from the college's existing red, used for
+     structural chrome (sidebar, headers), never for body text or CTAs. */
+  --color-brand-50: #FBEEF0;
+  --color-brand-100: #F3D6DA;
+  --color-brand-200: #E4AEB7;
+  --color-brand-400: #A64358;
+  --color-brand-500: #8A2E42;
+  --color-brand-600: #742537;
+  --color-brand-700: #5C1D2C;
+  --color-brand-800: #4A1624;
+  --color-brand-900: #38101A;
+
+  /* Accent: warm brass/gold — every interactive element (buttons, active
+     nav, focus rings, links) lives here instead of a generic blue. */
+  --color-gold-50: #FBF4E3;
+  --color-gold-100: #F5E4B8;
+  --color-gold-300: #E4BB5C;
+  --color-gold-400: #D4A433;
+  --color-gold-500: #B8860F;
+  --color-gold-600: #966C0C;
+  --color-gold-700: #74530A;
+
+  /* Neutral — โทนอุ่นแทน slate-* เดิม (เทาอมฟ้าที่ตีกับแดงการ์เน็ต) ใช้ตั้งแต่รอบ
+     ปรับ UI ปี 2569 เป็นต้นไป — หน้าที่ยังไม่ได้ปรับ (UserManagement, AuditLog ฯลฯ)
+     ยังใช้ slate-* เดิมต่อไปได้ปกติ ไม่กระทบกัน เพราะเป็นแค่การเพิ่มโทเค็นใหม่ */
+  --color-ink: #2A1B20;
+  --color-ink-soft: #5A484D;
+  --color-ink-mute: #8A7A7E;
+  --color-ink-faint: #A29094;
+  --color-line: #EFE6E4;
+  --color-line-soft: #F7F1EF;
+  --color-field: #FCFAFA;
+  --color-canvas: #F7F5F2;
+
+  /* Semantic (สถานะ) — แยกจาก accent gold โดยตั้งใจ กันสีชนกันเวลาใช้ทั้งคู่ใน
+     หน้าเดียวกัน (เช่น badge "รอส่ง RMS" ใช้ gold แต่ "ต้องตรวจสอบ" ใช้ warn) */
+  --color-ok-bg: #E9F6F0;
+  --color-ok-fg: #0B5F48;
+  --color-warn-bg: #FDF0DE;
+  --color-warn-fg: #8A5A0B;
+  --color-bad-bg: #FDECEF;
+  --color-bad-fg: #B03A50;
+
+  --shadow-card: 0 1px 2px rgba(56, 16, 26, 0.04), 0 8px 24px -12px rgba(56, 16, 26, 0.18);
+  --shadow-card-lg: 0 4px 8px rgba(56, 16, 26, 0.04), 0 16px 40px -12px rgba(56, 16, 26, 0.22);
+  --shadow-login: 0 24px 60px -20px rgba(26, 6, 12, 0.65);
+  --shadow-modal: 0 30px 60px -20px rgba(26, 6, 12, 0.6);
+}
+
+html {
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background-color: var(--color-gold-300);
+  color: var(--color-brand-900);
+}

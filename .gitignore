@@ -1,0 +1,38 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Secrets — never commit real credentials/API keys
+.env
+!.env.example
+
+# Old reference dumps / archives — not part of the app source
+/RMS_UI & Source_Code/
+/RMS_UI & Source_Code.rar
+/ออกแบบ UI ระบบใหม่.zip
+/main.py
+
+# Python bytecode cache
+__pycache__/
+*.pyc
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
