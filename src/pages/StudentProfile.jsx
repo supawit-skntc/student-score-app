@@ -11,6 +11,11 @@ function parsePoints(points) {
   return Number.isFinite(n) ? n : 0;
 }
 
+// จำกัดจำนวนชิปที่แสดงพร้อมกัน — ถ้าโรงเรียนมีนักเรียนโดนตัดคะแนนหลายร้อยคน
+// (ไม่ใช่แค่ไม่กี่คนซ้ำๆ เหมือนข้อมูลตัวอย่างตอนออกแบบ) รายการจะยาวจนรกจอ ต้อง
+// ให้ครูพิมพ์ค้นหาให้เจาะจงขึ้นแทน
+const MAX_CHIP_RESULTS = 20;
+
 // รับ initialStudentId เผื่อมาจากปุ่ม "ดูประวัติ" ในหน้า Dashboard/Report — ถ้าไม่มี
 // ก็ใช้เป็นหน้าค้นหาอิสระได้ตามปกติ
 export default function StudentProfile({ initialStudentId }) {
@@ -158,28 +163,37 @@ export default function StudentProfile({ initialStudentId }) {
           />
         </div>
 
-        {filtered.length === 0 ? (
+        {searchTerm.trim() === '' ? (
+          <p className="py-6 text-center text-sm text-ink-faint">พิมพ์รหัสหรือชื่อเพื่อค้นหานักเรียน</p>
+        ) : filtered.length === 0 ? (
           <p className="py-6 text-center text-sm text-ink-faint">ไม่พบนักเรียนที่ค้นหา</p>
         ) : (
-          <div className="flex flex-wrap gap-2">
-            {filtered.map((s) => {
-              const active = selected?.studentId === s.studentId;
-              return (
-                <button
-                  key={s.studentId}
-                  onClick={() => setSelectedId(s.studentId)}
-                  className={`inline-flex items-center gap-2 min-h-11 rounded-[14px] pl-3.5 pr-2 text-[13.5px] font-semibold border-[1.5px] transition-colors ${
-                    active ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-[#EADFDF] bg-white text-ink-soft hover:bg-line-soft'
-                  }`}
-                >
-                  {s.name}
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11.5px] font-bold ${active ? 'bg-brand-600 text-white' : 'bg-line-soft text-ink-mute'}`}>
-                    {s.total}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          <>
+            <div className="flex flex-wrap gap-2">
+              {filtered.slice(0, MAX_CHIP_RESULTS).map((s) => {
+                const active = selected?.studentId === s.studentId;
+                return (
+                  <button
+                    key={s.studentId}
+                    onClick={() => setSelectedId(s.studentId)}
+                    className={`inline-flex items-center gap-2 min-h-11 rounded-[14px] pl-3.5 pr-2 text-[13.5px] font-semibold border-[1.5px] transition-colors ${
+                      active ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-[#EADFDF] bg-white text-ink-soft hover:bg-line-soft'
+                    }`}
+                  >
+                    {s.name}
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11.5px] font-bold ${active ? 'bg-brand-600 text-white' : 'bg-line-soft text-ink-mute'}`}>
+                      {s.total}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {filtered.length > MAX_CHIP_RESULTS && (
+              <p className="mt-2.5 text-xs text-ink-faint">
+                พบ {filtered.length} คน — แสดง {MAX_CHIP_RESULTS} คนแรก ลองพิมพ์ให้เจาะจงขึ้นเพื่อดูคนที่ต้องการ
+              </p>
+            )}
+          </>
         )}
       </div>
 
