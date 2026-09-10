@@ -18,3 +18,34 @@ export function currentAcademicYear() {
   const d = new Date();
   return academicYearOf(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`);
 }
+
+// เทอมมีไว้ "เรียกชื่อ/แสดงผล" เท่านั้น — ไม่กระทบการนับคะแนนสะสม ซึ่งยังคง
+// รวมตลอดปีการศึกษาเหมือนเดิมตามระเบียบข้อ 11 (ยกเลิกคะแนนเมื่อขึ้นปีการศึกษา
+// ใหม่ เว้นแต่โดนทำทัณฑ์บนแล้ว) — ห้ามใช้ฟังก์ชันนี้ไปคำนวณ/กรองคะแนนสะสมแทน
+// academicYearOf เดิมเด็ดขาด เพราะจะทำให้ยอดคะแนนผิดไปจากระเบียบจริง
+//   เทอม 1 = พ.ค.-ก.ย., เทอม 2 = ต.ค.-เม.ย. (ของปีการศึกษาเดียวกัน)
+export function academicTermOf(isoDate) {
+  if (!isoDate) return null;
+  const [, m] = isoDate.split('-').map(Number);
+  if (!m) return null;
+  return (m >= 5 && m <= 9) ? 1 : 2;
+}
+
+export function currentAcademicTerm() {
+  const d = new Date();
+  return academicTermOf(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`);
+}
+
+// ป้ายชื่อเทอมพร้อมปีการศึกษา เช่น "เทอม 1/2569" — ใช้แสดงผล/ตั้งชื่อช่วงเวลา
+// เท่านั้น ไม่ใช่ตัวเลขคะแนนสะสม (ดูคำเตือนด้านบน)
+export function termLabel(isoDate) {
+  const term = academicTermOf(isoDate);
+  const year = academicYearOf(isoDate);
+  if (!term || !year) return '';
+  return `เทอม ${term}/${year}`;
+}
+
+export function currentTermLabel() {
+  const d = new Date();
+  return termLabel(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`);
+}

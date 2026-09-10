@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Search, SlidersHorizontal, FileText, Edit, Inbox, UserRound, Trash2 } from 'lucide-react';
+import { Loader2, Search, SlidersHorizontal, FileText, Edit, Inbox, UserRound, Trash2, Download } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
 import { OFFENSES, findOffense } from '../data/offenses';
 import { isAdmin, canViewAllRecords } from '../utils/permissions';
 import { academicYearOf, currentAcademicYear } from '../data/academicYear';
+import { downloadCsv } from '../utils/csv';
+import { todayLocalISO } from '../utils/date';
 import EditRecordModal from '../components/EditRecordModal';
 
 function parsePoints(points) {
@@ -226,6 +228,24 @@ export default function Report({ onViewStudent }) {
     return matchesSearch && matchesLevel && matchesMajor && matchesFrom && matchesTo && matchesHighRisk;
   });
 
+  // ส่งออกเฉพาะรายการที่กำลังเห็นอยู่บนจอ (ตรงกับตัวกรอง/คำค้นหาปัจจุบัน) — ทำ
+  // ทั้งหมดที่ฝั่งเบราว์เซอร์จากข้อมูลที่โหลดมาอยู่แล้ว ไม่ต้องยิง request ใหม่
+  const handleExportCsv = () => {
+    const headers = ['วันที่', 'รหัสนักเรียน', 'ชื่อ-นามสกุล', 'ระดับชั้น', 'สาขาวิชา', 'ฐานความผิด', 'คะแนนที่ถูกหัก', 'สถานะ RMS', 'ผู้บันทึก'];
+    const rows = filteredRecords.map((r) => [
+      r.displayDate,
+      r.studentId,
+      r.displayFullName,
+      r.displayLevel,
+      r.fieldOfStudy,
+      r.offense,
+      String(r.points).startsWith('-') ? r.points : `-${r.points}`,
+      SYNC_STATUS_MAP[r.rmsSyncStatus]?.label || '-',
+      r.teacherName,
+    ]);
+    downloadCsv(`รายงานตัดคะแนน_${todayLocalISO()}.csv`, headers, rows);
+  };
+
   return (
     <div className="flex flex-col gap-4">
 
@@ -253,6 +273,15 @@ export default function Report({ onViewStudent }) {
           >
             <SlidersHorizontal size={16} />
             ตัวกรอง
+          </button>
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            disabled={filteredRecords.length === 0}
+            className="inline-flex items-center gap-1.5 min-h-12 px-4 rounded-[14px] border-[1.5px] border-[#E3D9DA] bg-white text-sm font-semibold text-ink-soft transition-colors hover:bg-line-soft disabled:opacity-40 disabled:hover:bg-white"
+          >
+            <Download size={16} />
+            ส่งออก CSV
           </button>
           <span className="text-sm text-ink-mute font-medium shrink-0">
             พบ <b className="text-ink font-bold">{filteredRecords.length}</b> รายการ

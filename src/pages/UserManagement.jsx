@@ -4,7 +4,7 @@ import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
 import { ADMIN_ROLES, FULL_VISIBILITY_ROLES, ALL_ROLES } from '../utils/permissions';
 
-const emptyForm = { username: '', fullName: '', role: 'ครูผู้สอน', password: '' };
+const emptyForm = { username: '', fullName: '', role: 'ครูผู้สอน', password: '', email: '' };
 
 const inputCls = "w-full rounded-xl border border-slate-300 p-2.75 outline-none transition-all focus:border-brand-500 focus:ring-2 focus:ring-gold-300";
 const labelCls = "mb-1.5 block text-sm font-semibold text-slate-700";
@@ -48,7 +48,10 @@ export default function UserManagement() {
   };
 
   const openEdit = (u) => {
-    setForm({ username: u.username, fullName: u.fullName, role: u.role, password: '' });
+    // หมายเหตุ: getUsers ไม่ส่งอีเมลกลับมา (ไม่โชว์ใน UI ตามที่ตั้งใจ) ช่องนี้จึง
+    // เริ่มว่างเสมอตอนแก้ไข — เว้นว่างไว้แปลว่า "ไม่แก้อีเมลเดิม" ไม่ใช่ "ลบทิ้ง"
+    // (ฝั่งเซิร์ฟเวอร์จะไม่เขียนทับถ้าส่งค่าว่างมา ดู updateUser ใน Service_Users.gs)
+    setForm({ username: u.username, fullName: u.fullName, role: u.role, password: '', email: '' });
     setChangePassword(false);
     setModalMode('edit');
   };
@@ -69,7 +72,7 @@ export default function UserManagement() {
         const result = await callAPI('createUser', { data: form });
         if (result.status !== 'success') throw new Error(result.message);
       } else {
-        const payload = { username: form.username, fullName: form.fullName, role: form.role };
+        const payload = { username: form.username, fullName: form.fullName, role: form.role, email: form.email };
         if (changePassword) payload.password = form.password;
         // NEW backend action 'updateUser'
         const result = await callAPI('updateUser', { data: payload });
@@ -212,6 +215,17 @@ export default function UserManagement() {
                   disabled={modalMode === 'edit'}
                   className={`${inputCls} ${modalMode === 'edit' ? 'bg-slate-100 text-slate-500' : ''}`}
                 />
+              </div>
+
+              <div>
+                <label className={labelCls}>อีเมล (สำหรับเพิ่มสิทธิ์ดูเอกสารใน Google Drive)</label>
+                <input
+                  type="email" name="email" value={form.email} onChange={handleChange}
+                  className={inputCls} placeholder="เช่น teacher@gmail.com"
+                />
+                {modalMode === 'edit' && (
+                  <p className="mt-1.5 text-xs text-slate-400">เว้นว่างไว้ถ้าไม่ต้องการเปลี่ยนอีเมลเดิม</p>
+                )}
               </div>
 
               <div>

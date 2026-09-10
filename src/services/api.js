@@ -1,7 +1,7 @@
 // src/services/api.js
 
 // URL ของ Google Apps Script (Web App) จากระบบเดิมของคุณ
-const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyCKmdG_XuiM7hC2FUf0V1yWXvAYJ43vptgSiliMkVC3-MKzbG0qepkiA1bgUIDzSu3/exec";
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwFEsrUnTKvlAP8y9nYbFBZ3DJa6IB0boS_12UYJbZ0b4RCgJUpaxUumGs-FY5GUfI/exec";
 
 function getStoredToken() {
   try {

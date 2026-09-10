@@ -3,8 +3,10 @@ import { Camera, Save, Loader2, UserRound, FileWarning } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
 import { OFFENSES, findOffense } from '../data/offenses';
-import { resizeImageForOcr, parseOcrCardData } from '../utils/ocr';
+import { resizeImageForOcr, parseOcrCardData, VALID_MAJORS } from '../utils/ocr';
 import { todayLocalISO } from '../utils/date';
+
+const TITLE_OPTIONS = ['นาย', 'นาง', 'นางสาว'];
 
 export default function DeductionForm() {
   const [formData, setFormData] = useState({
@@ -31,6 +33,12 @@ export default function DeductionForm() {
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  // ใช้กับฟิลด์แบบแตะเลือก (คำนำหน้า/สาขาวิชา) แทนการพิมพ์ — ค่าเลือกได้จากลิสต์
+  // คงที่อยู่แล้วทั้งคู่ จึงไม่จำเป็นต้องให้ครูพิมพ์เอง (เร็วกว่าและพิมพ์ผิดไม่ได้)
+  const setField = (name, value) => {
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   // เลือกฐานความผิดแล้วเติมคะแนนให้อัตโนมัติตามระเบียบข้อ 11 (ยังแก้ไขเองได้
@@ -196,27 +204,58 @@ export default function DeductionForm() {
             <h2 className="font-display text-[15px] font-medium text-ink">ข้อมูลนักเรียน</h2>
           </div>
 
-          <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
-            <div>
-              <label className={labelCls}>รหัสประจำตัวนักเรียน</label>
-              <input type="text" name="studentId" value={formData.studentId} onChange={handleChange} required placeholder="เช่น 67301001" className={inputCls} />
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-1">
-                <label className={labelCls}>คำนำหน้า</label>
-                <input type="text" name="nameTitle" value={formData.nameTitle} onChange={handleChange} className={inputCls} />
+          <div className="flex flex-col gap-3.5">
+            <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
+              <div>
+                <label className={labelCls}>รหัสประจำตัวนักเรียน</label>
+                <input type="text" name="studentId" value={formData.studentId} onChange={handleChange} required placeholder="เช่น 67301001" className={inputCls} />
               </div>
-              <div className="col-span-2">
+              <div>
                 <label className={labelCls}>ชื่อ-นามสกุล</label>
                 <input type="text" name="studentName" value={formData.studentName} onChange={handleChange} required className={inputCls} />
               </div>
             </div>
 
             <div>
-              <label className={labelCls}>สาขาวิชา</label>
-              <input type="text" name="fieldOfStudy" value={formData.fieldOfStudy} onChange={handleChange} required className={inputCls} />
+              <label className={labelCls}>คำนำหน้า</label>
+              <div className="flex flex-wrap gap-2">
+                {TITLE_OPTIONS.map((t) => {
+                  const active = formData.nameTitle === t;
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setField('nameTitle', t)}
+                      className={`min-h-11 rounded-[14px] px-4 text-[13.5px] font-semibold border-[1.5px] transition-colors
+                        ${active ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-[#EADFDF] bg-white text-ink-soft hover:bg-line-soft'}`}
+                    >
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+
+            <div>
+              <label className={labelCls}>สาขาวิชา</label>
+              <div className="flex flex-wrap gap-2">
+                {VALID_MAJORS.map((m) => {
+                  const active = formData.fieldOfStudy === m;
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setField('fieldOfStudy', m)}
+                      className={`min-h-11 rounded-[14px] px-3.5 text-[13.5px] font-semibold border-[1.5px] transition-colors
+                        ${active ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-[#EADFDF] bg-white text-ink-soft hover:bg-line-soft'}`}
+                    >
+                      {m}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className={labelCls}>ระดับ</label>

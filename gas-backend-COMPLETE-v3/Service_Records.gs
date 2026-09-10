@@ -3,12 +3,50 @@
 // ฟังก์ชันที่เกี่ยวกับ RPA Bot (คิวงาน, สถิติ) แยกไปอยู่ Service_RpaBot.gs แล้ว
 // ==========================================
 
+// ฐานความผิดที่ห้ามตัดซ้ำในวันเดียวกัน — ให้โอกาสนักเรียนไปแก้ไขก่อน (เช่น
+// แต่งกาย/ทรงผม) ส่วนความผิดอื่นที่เหลือ (สูบบุหรี่, ทะเลาะวิวาท, อื่นๆ ฯลฯ)
+// ยังตัดซ้ำในวันเดียวกันได้ตามปกติเพราะทำผิดซ้ำได้จริง
+// ⚠️ ต้องตรงกับ src/data/offenses.js ฝั่งเว็บเสมอ (ฟิลด์ noRepeatSameDay) —
+// แก้ที่นี่แล้วต้องไปแก้ที่นั่นด้วย ไม่งั้นข้อความเตือนหน้าเว็บกับพฤติกรรมจริง
+// จะไม่ตรงกัน
+const NO_REPEAT_SAME_DAY_OFFENSES = ["แต่งกายผิดระเบียบ", "ทรงผมผิดระเบียบ/ทำสีผม"];
+
+// แปลงค่าวันที่จากเซลล์ชีต (อาจเป็น Date object หรือ string ก็ได้) ให้เป็น
+// "YYYY-MM-DD" เพื่อเทียบกับ data.date ที่ส่งมาจากฟอร์ม (input type="date")
+function toIsoDateString_(rawDate) {
+  const d = new Date(rawDate);
+  if (isNaN(d.getTime())) return String(rawDate);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// เช็กว่านักเรียนคนนี้เคยถูกบันทึกฐานความผิดเดียวกันนี้ในวันเดียวกันไปแล้วหรือยัง
+function hasSameDayDuplicate_(studentId, offense, dateStr) {
+  const rows = readActiveRecordRows_();
+  if (!rows) return false;
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (String(row[3]).trim() !== String(studentId).trim()) continue;
+    if (String(row[10]).trim() !== offense) continue;
+    if (toIsoDateString_(row[2]) === dateStr) return true;
+  }
+  return false;
+}
+
 function processRecordTransaction(token, data) {
   const session = getSession(token);
   const lock = LockService.getScriptLock();
 
   try {
     lock.waitLock(10000);
+
+    if (NO_REPEAT_SAME_DAY_OFFENSES.indexOf(data.offense) !== -1 &&
+        hasSameDayDuplicate_(data.studentId, data.offense, data.date)) {
+      logAudit(data.teacherName, "CREATE_RECORD", data.studentId, "BLOCKED_DUPLICATE_SAME_DAY: " + data.offense);
+      return {
+        status: "error",
+        message: `นักเรียนคนนี้ถูกบันทึก "${data.offense}" ไปแล้วในวันที่ ${data.date} — ฐานความผิดนี้ตัดซ้ำในวันเดียวกันไม่ได้ ให้โอกาสนักเรียนไปแก้ไขก่อน`,
+      };
+    }
 
     const sheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName("Records");
     const uuid = Utilities.getUuid();
@@ -33,6 +71,7 @@ function processRecordTransaction(token, data) {
     ];
 
     sheet.appendRow(rowData);
+    invalidateRecordsCache_();
 
     logAudit(data.teacherName, "CREATE_RECORD", data.studentId, "SUCCESS");
 
@@ -49,8 +88,31 @@ function processRecordTransaction(token, data) {
 // ==========================================
 // 1. อ่านแถวข้อมูลดิบจากชีต (ข้ามรายการที่ถูกลบไปแล้ว) — ใช้ร่วมกันระหว่าง
 // getRecords() และ getMyRecords() กันโค้ดอ่าน/แปลงข้อมูลซ้ำกันสองที่
+//
+// 🚀 แคชผลลัพธ์ไว้ 30 วินาที (CacheService) — เดิมทุกครั้งที่เปิดแผงควบคุม/
+// รายงาน/ประวัตินักเรียน จะอ่านทั้งชีต Records ใหม่หมดทุกครั้ง ยิ่งชีตมีแถวเยอะ
+// ก็ยิ่งช้า และยิ่งมีคนเปิดพร้อมกันหลายคน + RPA bot ก็ยิ่งเสี่ยงชนโควตาการอ่าน
+// ของ Google (ทำให้เจอ error แปลกๆ เป็นระยะ) แคชนี้ตัดการอ่านซ้ำซ้อนออกไปเยอะ
+// โดยไม่กระทบสิทธิ์การมองเห็น เพราะ cache เก็บแค่ "ข้อมูลดิบทุกแถว" การกรองว่า
+// ใครเห็นรายการไหน (ดู getMyRecords) ยังทำสดใหม่ทุกครั้งจาก session ปัจจุบัน
+//
+// ⚠️ CacheService จำกัดขนาดค่าต่อ 1 คีย์ไว้ที่ ~100KB — ถ้าข้อมูลใหญ่เกินนี้
+// (ชีตมีหลายพันแถว) จะข้ามการแคชไปเฉยๆ ไม่ error แค่ไม่ได้ประโยชน์จากแคชต่อ
 // ==========================================
+const RECORDS_CACHE_KEY = 'records_raw_rows_v1';
+const RECORDS_CACHE_TTL_SECONDS = 30;
+
 function readActiveRecordRows_() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(RECORDS_CACHE_KEY);
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (e) {
+      // แคชอ่านไม่ขึ้น (ข้อมูลเพี้ยน/หมดอายุพอดี) — อ่านจากชีตตามปกติแทน
+    }
+  }
+
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
   if (!sheet) return null;
 
@@ -60,7 +122,23 @@ function readActiveRecordRows_() {
     if (data[i][17]) continue; // ข้ามรายการที่ถูกลบไปแล้ว (soft delete — คอลัมน์ R)
     rows.push(data[i]);
   }
+
+  try {
+    const serialized = JSON.stringify(rows);
+    if (serialized.length < 95000) {
+      cache.put(RECORDS_CACHE_KEY, serialized, RECORDS_CACHE_TTL_SECONDS);
+    }
+  } catch (e) {
+    // แคชพังไม่ควรทำให้ทั้งฟังก์ชันพังตาม — ปล่อยผ่าน ใช้ข้อมูลสดที่อ่านมาได้ตามปกติ
+  }
+
   return rows;
+}
+
+// เรียกทันทีหลังบันทึก/แก้ไข/ลบรายการสำเร็จ กันไม่ให้เห็นข้อมูลเก่าค้างในแคช
+// นานถึง 30 วินาทีหลังเพิ่งมีการเปลี่ยนแปลงจริง
+function invalidateRecordsCache_() {
+  CacheService.getScriptCache().remove(RECORDS_CACHE_KEY);
 }
 
 function mapRowToRecord_(row) {
@@ -188,6 +266,7 @@ function updateRecord(token, updatedData) {
   // 🆕 แก้ไขเนื้อหาแล้ว ควรส่งกลับไป sync ใหม่ใน RMS อีกครั้ง
   // (ไม่แตะ RMS_Synced_At/RMS_Note เดิม เผื่ออยากเทียบย้อนหลังว่าครั้งก่อน sync ไว้เมื่อไร)
   sheet.getRange(rowIndex, 15).setValue("pending");
+  invalidateRecordsCache_();
 
   logAudit(session.username, "UPDATE_RECORD", updatedData.studentId, "SUCCESS");
 
@@ -215,6 +294,7 @@ function deleteRecord(token, id) {
     if (String(data[i][0]) === String(id)) {
       const rowIndex = i + 1;
       sheet.getRange(rowIndex, 18).setValue(new Date().toISOString());
+      invalidateRecordsCache_();
       logAudit(session.username, "DELETE_RECORD", String(data[i][3] || ""), "SUCCESS");
       return { status: "success", message: "ลบรายการเรียบร้อยแล้ว" };
     }

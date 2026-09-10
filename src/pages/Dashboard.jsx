@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
 import { statusForPoints } from '../data/thresholds';
-import { academicYearOf, currentAcademicYear } from '../data/academicYear';
+import { academicYearOf, currentAcademicYear, currentTermLabel } from '../data/academicYear';
 import { isAdmin } from '../utils/permissions';
 import SummaryCard from '../components/ui/SummaryCard';
 import AtRiskStudentsCard from '../components/dashboard/AtRiskStudentsCard';
@@ -153,7 +153,7 @@ export default function Dashboard({ onViewStudent }) {
           tone="brand"
           label="เอกสารทั้งหมด"
           value={stats.total}
-          meta={`ปีการศึกษา ${stats.thisAcademicYear}`}
+          meta={currentTermLabel()}
         />
         <SummaryCard variant="plain" tone="ink" label="รายการเดือนนี้" value={stats.thisMonth} />
         <SummaryCard variant="plain" tone="bad" label="คะแนนเฉลี่ยที่ถูกหัก / รายการ" value={stats.avgPoints} meta="คะแนน" />

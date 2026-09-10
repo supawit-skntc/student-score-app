@@ -48,7 +48,9 @@ function createUser(token, newUserData) {
   const saltedHash = hashPassword(String(newUserData.password).trim(), salt);
   // เขียนคอลัมน์ E (Salt) ด้วยเสมอสำหรับบัญชีใหม่ทุกบัญชี — ปลอดภัยกว่าบัญชีเก่า
   // ที่ยังไม่มี salt (ดูคำอธิบายที่ hashPassword() ใน Utils.gs)
-  sheet.appendRow([username, saltedHash, newUserData.fullName || '', newUserData.role || '', salt]);
+  // 🆕 คอลัมน์ F (Email) — เก็บไว้ให้ผู้ดูแลระบบเอาไปเพิ่มสิทธิ์ดูเอกสารใน Google
+  // Drive เองภายหลัง (ดูตรงชีต Users โดยตรง) ไม่ได้ส่งกลับไปแสดงในหน้าเว็บเลย
+  sheet.appendRow([username, saltedHash, newUserData.fullName || '', newUserData.role || '', salt, newUserData.email || '']);
 
   logAudit(getSession(token).username, "CREATE_USER", username, "SUCCESS");
   return { status: "success", message: "เพิ่มผู้ใช้งานสำเร็จ" };
@@ -72,6 +74,13 @@ function updateUser(token, updatedData) {
 
   sheet.getRange(rowIndex, 3).setValue(updatedData.fullName || '');
   sheet.getRange(rowIndex, 4).setValue(updatedData.role || '');
+
+  // อีเมลไม่ถูกส่งกลับมาแสดงในฟอร์มแก้ไข (getUsersList ไม่คืนค่านี้ไปให้เว็บเลย)
+  // ดังนั้นถ้าช่องว่างเปล่าตอนบันทึก แปลว่า "ไม่ได้ตั้งใจแก้" ไม่ใช่ "ต้องการลบ
+  // อีเมลเดิมทิ้ง" จึงเขียนทับเฉพาะตอนมีค่าจริงส่งมาเท่านั้น กันข้อมูลหายโดยไม่ตั้งใจ
+  if (updatedData.email) {
+    sheet.getRange(rowIndex, 6).setValue(updatedData.email);
+  }
 
   if (updatedData.password) {
     if (String(updatedData.password).length < 8) {
@@ -124,4 +133,19 @@ function setupSaltColumn() {
     sheet.getRange(1, 5).setValue("Salt");
   }
   Logger.log("ตั้งค่าคอลัมน์ Salt เรียบร้อยแล้ว");
+}
+
+// ==========================================
+// รันครั้งเดียวจาก Apps Script Editor เช่นกัน เพื่อเตรียมคอลัมน์ F (Email)
+// สำหรับฟีเจอร์ "เก็บอีเมลผู้ใช้งาน" (ใช้เพิ่มสิทธิ์ Google Drive ภายหลัง)
+// ==========================================
+function setupEmailColumn() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Users");
+  if (!sheet) throw new Error("ไม่พบแผ่นงาน Users");
+
+  const header = sheet.getRange(1, 6).getValue();
+  if (!header) {
+    sheet.getRange(1, 6).setValue("Email");
+  }
+  Logger.log("ตั้งค่าคอลัมน์ Email เรียบร้อยแล้ว");
 }

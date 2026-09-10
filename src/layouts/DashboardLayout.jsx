@@ -3,7 +3,7 @@ import { LayoutDashboard, FileEdit, FileText, LogOut, Users, Plus, UserRound, Hi
 import Swal from 'sweetalert2';
 import { isAdmin } from '../utils/permissions';
 import { callAPI } from '../services/api';
-import { currentAcademicYear } from '../data/academicYear';
+import { currentTermLabel } from '../data/academicYear';
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'แผงควบคุม', icon: LayoutDashboard },
@@ -163,7 +163,7 @@ export default function DashboardLayout({ children, setView, view = 'dashboard' 
               <span className="h-[26px] w-[26px] rounded-full bg-brand-500 text-white flex items-center justify-center text-[12.5px] font-bold">
                 {initials}
               </span>
-              <span className="text-[12.5px] font-semibold text-ink-soft">ปีการศึกษา {currentAcademicYear()}</span>
+              <span className="text-[12.5px] font-semibold text-ink-soft">{currentTermLabel()}</span>
             </div>
             <span className="md:hidden h-[34px] w-[34px] rounded-full bg-brand-500 text-white flex items-center justify-center text-[13px] font-bold shrink-0">
               {initials}
