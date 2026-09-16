@@ -42,23 +42,40 @@ def run(dry_run: bool) -> None:
     for record in pending:
         log.info("--- กำลังประมวลผล %s (นักเรียน %s) ---", record["id"], record["studentId"])
         started_at = time.time()
-        outcome = process_one_record(record, dry_run=dry_run)
-        duration_seconds = time.time() - started_at
-        result_status = outcome["status"]
 
-        if dry_run:
-            counts["dry_run"] += 1
-            log.info("[DRY RUN] ผลลัพธ์: %s (%.1f วินาที) — ไม่บันทึก log เพราะเป็นการทดสอบ", outcome, duration_seconds)
-            continue
+        # 🛡️ ครอบทั้งการประมวลผลและการรายงานสถานะกลับด้วย try/except เดียวกัน —
+        # เดิมถ้ามีข้อผิดพลาดตรงไหนก็ตาม (แม้แค่ report สถานะกลับไม่สำเร็จ ทั้งที่
+        # บันทึกเข้า RMS จริงไปแล้ว) จะทำให้ทั้งฟังก์ชัน run() พังทันที เหลือ
+        # รายการที่ยังไม่ถึงคิวไม่ถูกแตะเลยแม้แต่รายการเดียว ทั้งที่ไม่เกี่ยวข้อง
+        # กับปัญหาที่เพิ่งเจอเลย (เช่น Google เด้ง error ชั่วคราวแค่ตอนนั้น)
+        # ตอนนี้ข้ามไปทำรายการถัดไปแทน แล้วสรุปให้เห็นตอนจบว่าพังไปกี่รายการ —
+        # ปลอดภัยเสมอเพราะกลไกกันซ้ำด้วย REF tag ใน rms_bot.py จะตรวจพบเองว่า
+        # รายการไหนบันทึกเข้า RMS ไปแล้วจริงตอนรันรอบถัดไป ไม่มีทางบันทึกซ้ำ
+        try:
+            outcome = process_one_record(record, dry_run=dry_run)
+            duration_seconds = time.time() - started_at
+            result_status = outcome["status"]
 
-        sheet_status = STATUS_MAP.get(result_status, "error")
-        counts[sheet_status] = counts.get(sheet_status, 0) + 1
-        update_status(record["id"], sheet_status, outcome.get("message", ""))
-        log_event(
-            record_id=record["id"], student_id=record["studentId"], offense=record["offense"],
-            status=sheet_status, message=outcome.get("message", ""), duration_seconds=duration_seconds,
-        )
-        log.info("บันทึกสถานะ '%s' กลับไปที่เว็บแอปแล้ว (ใช้เวลา %.1f วินาที)", sheet_status, duration_seconds)
+            if dry_run:
+                counts["dry_run"] += 1
+                log.info("[DRY RUN] ผลลัพธ์: %s (%.1f วินาที) — ไม่บันทึก log เพราะเป็นการทดสอบ", outcome, duration_seconds)
+            else:
+                sheet_status = STATUS_MAP.get(result_status, "error")
+                counts[sheet_status] = counts.get(sheet_status, 0) + 1
+                update_status(record["id"], sheet_status, outcome.get("message", ""))
+                log_event(
+                    record_id=record["id"], student_id=record["studentId"], offense=record["offense"],
+                    status=sheet_status, message=outcome.get("message", ""), duration_seconds=duration_seconds,
+                )
+                log.info("บันทึกสถานะ '%s' กลับไปที่เว็บแอปแล้ว (ใช้เวลา %.1f วินาที)", sheet_status, duration_seconds)
+        except Exception as e:
+            counts["error"] = counts.get("error", 0) + 1
+            log.exception(
+                "รายการ %s ล้มเหลวระหว่างประมวลผลหรือรายงานสถานะกลับ — ข้ามไปทำรายการถัดไป "
+                "(ถ้าบันทึกเข้า RMS ไปแล้วจริง รอบหน้าจะตรวจพบจาก REF tag แล้วมาร์กสำเร็จให้เอง "
+                "ไม่มีทางบันทึกซ้ำ): %s",
+                record["id"], e,
+            )
 
         # เว้นช่วงสั้นๆ ระหว่างรายการ ลดโอกาสที่เซสชันเดิมจะยังค้างอยู่ตอน login รอบถัดไป
         # และไม่ยิง request รัวเกินไปจนอาจโดนระบบ RMS มองเป็นพฤติกรรมผิดปกติ

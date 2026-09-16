@@ -9,6 +9,9 @@ setup_credentials.bat) จะถามรหัสผ่านแล้วเก
 """
 
 import json
+import logging
+import time
+
 import keyring
 import requests
 
@@ -18,29 +21,60 @@ APP_USERNAME = keyring.get_password(SERVICE, "app_username")
 APP_PASSWORD = keyring.get_password(SERVICE, "app_password")
 
 _token = None  # cache ไว้ในหน่วยความจำระหว่างการรันครั้งนี้ ไม่ต้อง login ซ้ำทุกคำขอ
+_log = logging.getLogger("sheets_queue")
+
+# เจอมาแล้วอย่างน้อย 2 ครั้งว่า Google เด้งหน้า HTML (ไม่ใช่ JSON) กลับมาเฉยๆ
+# เป็นครั้งคราวโดยไม่มีสาเหตุจากโค้ดเราเลย (เช่น ตอนกำลังรันบอทจริงแล้วยิง
+# updateSyncStatus รัวๆ) ลองใหม่ไม่กี่ครั้งก่อนค่อยถือว่าพังจริง ลดโอกาสที่ปัญหา
+# ชั่วคราวแบบนี้จะทำให้ทั้งการรันบอทล้มไปเฉยๆ
+RETRY_ATTEMPTS = 3
+RETRY_BACKOFF_SECONDS = 2
+
+
+def _warn_and_wait(action: str, attempt: int, error: Exception) -> None:
+    wait_seconds = RETRY_BACKOFF_SECONDS * attempt
+    _log.warning(
+        "เรียก action '%s' ไม่สำเร็จ (ครั้งที่ %d/%d): %s — ลองใหม่ใน %d วินาที",
+        action, attempt, RETRY_ATTEMPTS, error, wait_seconds,
+    )
+    time.sleep(wait_seconds)
 
 
 def _post(action: str, **extra) -> dict:
     payload = {"action": action, "token": _token, **extra}
-    resp = requests.post(
-        GAS_API_URL,
-        data=json.dumps(payload),
-        headers={"Content-Type": "text/plain;charset=utf-8"},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    try:
-        return resp.json()
-    except ValueError:
-        # เซิร์ฟเวอร์ตอบกลับมาไม่ใช่ JSON เลย (เช่น หน้า HTML ของ Google ที่ขอให้ login/
-        # ขอสิทธิ์ก่อน) มักเกิดจากตั้งค่า deployment ผิด — ดูสาเหตุที่พบบ่อยใน README
-        # หัวข้อ "แก้ปัญหา JSONDecodeError" แสดงเนื้อหาจริงที่ได้กลับมาไว้ช่วยวินิจฉัย
-        snippet = resp.text[:300].replace("\n", " ")
-        raise RuntimeError(
-            f"เซิร์ฟเวอร์ไม่ได้ตอบกลับเป็น JSON (HTTP {resp.status_code}) — "
-            f"อาจเป็นเพราะตั้งค่า deployment เป็น 'Anyone within organization' "
-            f"แทนที่จะเป็น 'Anyone' เนื้อหาที่ได้กลับมาจริง: {snippet}"
-        )
+
+    for attempt in range(1, RETRY_ATTEMPTS + 1):
+        is_last_attempt = attempt == RETRY_ATTEMPTS
+
+        try:
+            resp = requests.post(
+                GAS_API_URL,
+                data=json.dumps(payload),
+                headers={"Content-Type": "text/plain;charset=utf-8"},
+                timeout=30,
+            )
+            resp.raise_for_status()
+        except requests.RequestException as e:
+            if is_last_attempt:
+                raise RuntimeError(f"เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จหลังลองแล้ว {RETRY_ATTEMPTS} ครั้ง: {e}") from e
+            _warn_and_wait(action, attempt, e)
+            continue
+
+        try:
+            return resp.json()
+        except ValueError as e:
+            # เซิร์ฟเวอร์ตอบกลับมาไม่ใช่ JSON เลย (เช่น หน้า HTML ของ Google ที่ขอให้ login/
+            # ขอสิทธิ์ก่อน) — ส่วนใหญ่เป็นปัญหาชั่วคราวของ Google เอง (หายไปเองพอลองใหม่)
+            # จึงลองซ้ำก่อนจะฟันธงว่าพังจริงเพราะตั้งค่า deployment ผิด
+            if not is_last_attempt:
+                _warn_and_wait(action, attempt, e)
+                continue
+            snippet = resp.text[:300].replace("\n", " ")
+            raise RuntimeError(
+                f"เซิร์ฟเวอร์ไม่ได้ตอบกลับเป็น JSON (HTTP {resp.status_code}) หลังลองแล้ว {RETRY_ATTEMPTS} ครั้ง — "
+                f"ถ้ายังเจอซ้ำๆ อาจเป็นเพราะตั้งค่า deployment เป็น 'Anyone within organization' "
+                f"แทนที่จะเป็น 'Anyone' เนื้อหาที่ได้กลับมาจริง: {snippet}"
+            ) from e
 
 
 def _ensure_login() -> None:
@@ -96,5 +130,4 @@ def log_event(record_id: str, student_id: str, offense: str, status: str,
             "durationSeconds": round(duration_seconds, 1) if duration_seconds is not None else "",
         })
     except Exception as e:
-        import logging
-        logging.getLogger("sheets_queue").warning("บันทึก RPA_Log ไม่สำเร็จ (ไม่กระทบผลลัพธ์หลัก): %s", e)
+        _log.warning("บันทึก RPA_Log ไม่สำเร็จ (ไม่กระทบผลลัพธ์หลัก): %s", e)

@@ -34,11 +34,8 @@ function hasSameDayDuplicate_(studentId, offense, dateStr) {
 
 function processRecordTransaction(token, data) {
   const session = getSession(token);
-  const lock = LockService.getScriptLock();
 
   try {
-    lock.waitLock(10000);
-
     if (NO_REPEAT_SAME_DAY_OFFENSES.indexOf(data.offense) !== -1 &&
         hasSameDayDuplicate_(data.studentId, data.offense, data.date)) {
       logAudit(data.teacherName, "CREATE_RECORD", data.studentId, "BLOCKED_DUPLICATE_SAME_DAY: " + data.offense);
@@ -48,10 +45,15 @@ function processRecordTransaction(token, data) {
       };
     }
 
-    const sheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName("Records");
     const uuid = Utilities.getUuid();
     const timestamp = new Date().toISOString();
 
+    // 🐢 สร้าง PDF (คัดลอกไฟล์ + แปลง Slides เป็น PDF) เป็นขั้นตอนที่ช้าที่สุดใน
+    // ทั้งฟังก์ชันนี้มาก (หลายวินาที บางครั้งนานกว่านั้นถ้า Google ตอบสนองช้า)
+    // ต้องทำ "ก่อน" ขอ lock เสมอ — เดิมโค้ดถือ lock คลุมขั้นตอนนี้ไปด้วย ทำให้ครู
+    // คนอื่นที่กดบันทึกพร้อมกันต้องรอคิวนานผิดปกติ และเสี่ยง lock timeout (10 วิ)
+    // ถ้า PDF ของคนแรกใช้เวลานานกว่านั้น — ย้ายมาไว้นอก lock เพราะการสร้าง PDF
+    // ไม่มีความเสี่ยงเรื่องแถวซ้ำอยู่แล้ว (คนละไฟล์ คนละ uuid กันคนละคน)
     const pdfUrl = generatePDF(data, uuid);
 
     const rowData = [
@@ -70,8 +72,18 @@ function processRecordTransaction(token, data) {
       session ? session.username : "",
     ];
 
-    sheet.appendRow(rowData);
-    invalidateRecordsCache_();
+    // 🔒 ขอ lock เฉพาะช่วง "เขียนแถวใหม่" ซึ่งเป็นขั้นตอนเดียวที่ต้องกันชนกัน
+    // จริงๆ (สองคนกด appendRow พร้อมกันเป๊ะอาจไปเขียนทับแถวว่างเดียวกัน) ใช้เวลา
+    // แค่เสี้ยววินาที ไม่ใช่หลายวินาทีเหมือนตอนคลุม PDF ไปด้วย
+    const lock = LockService.getScriptLock();
+    lock.waitLock(10000);
+    try {
+      const sheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName("Records");
+      sheet.appendRow(rowData);
+      invalidateRecordsCache_();
+    } finally {
+      lock.releaseLock();
+    }
 
     logAudit(data.teacherName, "CREATE_RECORD", data.studentId, "SUCCESS");
 
@@ -80,8 +92,6 @@ function processRecordTransaction(token, data) {
   } catch (e) {
     logAudit(data.teacherName, "CREATE_RECORD", data.studentId, "FAILED: " + e.message);
     return { status: "error", message: "ระบบเกิดข้อผิดพลาด: " + e.message };
-  } finally {
-    lock.releaseLock();
   }
 }
 
@@ -139,6 +149,61 @@ function readActiveRecordRows_() {
 // นานถึง 30 วินาทีหลังเพิ่งมีการเปลี่ยนแปลงจริง
 function invalidateRecordsCache_() {
   CacheService.getScriptCache().remove(RECORDS_CACHE_KEY);
+}
+
+// ==========================================
+// ค้นหาตำแหน่งแถวของรายการที่มี id (คอลัมน์ A) ตรงกับที่ให้มา — รวมโค้ดที่เดิม
+// กระจายซ้ำกันอยู่ 3 ที่ (updateRecord, deleteRecord, updateSyncStatus ใน
+// Service_RpaBot.gs) มาไว้ที่เดียว กันแก้ตรงนึงแล้วลืมอีกตรงนึง
+// คืนค่า rowIndex แบบ 1-indexed (นับรวมหัวตาราง) หรือ null ถ้าไม่เจอ
+// ==========================================
+function findRecordRowIndexById_(sheet, id) {
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0]) === String(id)) {
+      return i + 1;
+    }
+  }
+  return null;
+}
+
+// ==========================================
+// 🚀 แคชตำแหน่งแถวของทุกรายการ (ไม่ใช่แค่ที่ยังไม่ถูกลบ) ไว้สั้นๆ — ให้
+// updateSyncStatus() ใน Service_RpaBot.gs ใช้ระหว่างที่บอทกำลังรันอยู่ ไม่ต้อง
+// อ่านทั้งชีตใหม่ทุกครั้งที่มีรายการเสร็จ 1 รายการ (เดิมบอทเรียก updateSyncStatus
+// ทีละรายการ แล้วแต่ละครั้งก็ getDataRange().getValues() ใหม่หมด — คิว 10 รายการ
+// = อ่านทั้งชีต 10 รอบรัวๆ ติดกัน ยิ่งเสี่ยงชนโควตา/เกิด error แปลกๆ ของ Google)
+//
+// ปลอดภัยที่จะแคชตำแหน่งแถวไว้ได้ (ต่างจากเนื้อหาข้อมูลที่ห้ามแคชนาน) เพราะระบบนี้
+// ไม่มีจุดไหนเรียก deleteRow()/insertRow() กับชีต Records เลย (ลบรายการใช้ soft
+// delete เขียนคอลัมน์ R แทน) แถวจึงไม่มีวันขยับตำแหน่งตราบใดที่ยังไม่ถูกลบแถวจริง
+// ==========================================
+const SYNC_ROW_INDEX_CACHE_KEY = 'records_row_index_by_id_v1';
+const SYNC_ROW_INDEX_CACHE_TTL_SECONDS = 600; // 10 นาที ครอบคลุมเวลารันบอท 1 รอบสบายๆ
+
+function cacheRecordRowIndexMap_(rowIndexById) {
+  try {
+    const serialized = JSON.stringify(rowIndexById);
+    if (serialized.length < 95000) {
+      CacheService.getScriptCache().put(SYNC_ROW_INDEX_CACHE_KEY, serialized, SYNC_ROW_INDEX_CACHE_TTL_SECONDS);
+    }
+  } catch (e) {
+    // แคชพังไม่ควรทำให้ฟังก์ชันหลักพังตาม — ปล่อยผ่าน ใช้การอ่านสดตามปกติแทน
+  }
+}
+
+// คืนตำแหน่งแถวจากแคชถ้ามี (เร็ว ไม่ต้องอ่านทั้งชีต) หรือ null ถ้าไม่เจอในแคช
+// (แคชหมดอายุ หรือรายการนี้ถูกสร้างหลังจากแคชล่าสุด) — ผู้เรียกต้อง fallback ไป
+// ใช้ findRecordRowIndexById_() เองเสมอเมื่อได้ null กลับมา ห้ามถือว่า "ไม่พบ"
+function getCachedRecordRowIndex_(id) {
+  const cached = CacheService.getScriptCache().get(SYNC_ROW_INDEX_CACHE_KEY);
+  if (!cached) return null;
+  try {
+    const map = JSON.parse(cached);
+    return map[String(id)] || null;
+  } catch (e) {
+    return null;
+  }
 }
 
 function mapRowToRecord_(row) {
@@ -228,19 +293,10 @@ function updateRecord(token, updatedData) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
   if (!sheet) return { status: "error", message: "ไม่พบแผ่นงานข้อมูลระบบ" };
 
-  const data = sheet.getDataRange().getValues();
-  let rowIndex = -1;
+  const rowIndex = findRecordRowIndexById_(sheet, updatedData.id);
+  if (rowIndex === null) return { status: "error", message: "ไม่พบข้อมูลที่ต้องการแก้ไข" };
 
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(updatedData.id)) {
-      rowIndex = i + 1;
-      break;
-    }
-  }
-
-  if (rowIndex === -1) return { status: "error", message: "ไม่พบข้อมูลที่ต้องการแก้ไข" };
-
-  const oldPdfUrl = String(data[rowIndex - 1][13]);
+  const oldPdfUrl = String(sheet.getRange(rowIndex, 14).getValue());
   try {
     if (oldPdfUrl) {
       const fileIdMatch = oldPdfUrl.match(/[-\w]{25,}/);
@@ -289,18 +345,14 @@ function deleteRecord(token, id) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
   if (!sheet) return { status: "error", message: "ไม่พบแผ่นงานข้อมูลระบบ" };
 
-  const data = sheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(id)) {
-      const rowIndex = i + 1;
-      sheet.getRange(rowIndex, 18).setValue(new Date().toISOString());
-      invalidateRecordsCache_();
-      logAudit(session.username, "DELETE_RECORD", String(data[i][3] || ""), "SUCCESS");
-      return { status: "success", message: "ลบรายการเรียบร้อยแล้ว" };
-    }
-  }
+  const rowIndex = findRecordRowIndexById_(sheet, id);
+  if (rowIndex === null) return { status: "error", message: "ไม่พบรายการที่ id นี้: " + id };
 
-  return { status: "error", message: "ไม่พบรายการที่ id นี้: " + id };
+  const studentId = String(sheet.getRange(rowIndex, 4).getValue() || "");
+  sheet.getRange(rowIndex, 18).setValue(new Date().toISOString());
+  invalidateRecordsCache_();
+  logAudit(session.username, "DELETE_RECORD", studentId, "SUCCESS");
+  return { status: "success", message: "ลบรายการเรียบร้อยแล้ว" };
 }
 
 // ==========================================

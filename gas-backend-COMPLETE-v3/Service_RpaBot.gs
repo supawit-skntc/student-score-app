@@ -49,9 +49,16 @@ function getSyncQueue() {
 
   const data = sheet.getDataRange().getValues();
   const queue = [];
+  // 🚀 เก็บตำแหน่งแถวของทุกรายการที่ยังไม่ถูกลบไว้ด้วยเลย (ไม่ใช่แค่ที่ pending)
+  // ให้ updateSyncStatus() เอาไปใช้ต่อระหว่างบอทกำลังรันรอบนี้อยู่ ไม่ต้องอ่าน
+  // ทั้งชีตซ้ำทุกครั้งที่มีรายการเสร็จ 1 รายการ (ดูคำอธิบายเต็มที่
+  // cacheRecordRowIndexMap_ ใน Service_Records.gs)
+  const rowIndexById = {};
 
   for (let i = 1; i < data.length; i++) {
     if (data[i][17]) continue; // ข้ามรายการที่ถูกลบไปแล้ว แม้จะยังมีสถานะ pending ค้างอยู่
+    rowIndexById[String(data[i][0] || "")] = i + 1;
+
     const status = String(data[i][14] || "").trim().toLowerCase();
     if (status !== "pending") continue;
 
@@ -75,6 +82,8 @@ function getSyncQueue() {
     });
   }
 
+  cacheRecordRowIndexMap_(rowIndexById);
+
   return { status: "success", data: queue };
 }
 
@@ -85,17 +94,27 @@ function updateSyncStatus(payload) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
   if (!sheet) return { status: "error", message: "ไม่พบแผ่นงาน Records" };
 
-  const data = sheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(payload.id)) {
-      const rowIndex = i + 1;
-      sheet.getRange(rowIndex, 15).setValue(payload.status || "");
-      sheet.getRange(rowIndex, 16).setValue(new Date().toISOString());
-      sheet.getRange(rowIndex, 17).setValue(payload.note || "");
-      return { status: "success" };
-    }
+  // 🚀 ลองใช้ตำแหน่งแถวจากแคชก่อน (ที่ getSyncQueue() เพิ่งเก็บไว้ตอนต้นรอบรัน
+  // ของบอท) กันอ่านทั้งชีตใหม่ทุกครั้งที่มีรายการเสร็จ 1 รายการ — ถ้าไม่เจอในแคช
+  // (หมดอายุ หรือรายการนี้ไม่ได้มาจาก getSyncQueue รอบล่าสุด) ก็ fallback ไปอ่าน
+  // สดตามปกติ ไม่มีทางได้ผลลัพธ์ผิดพลาดจากตรงนี้
+  let rowIndex = getCachedRecordRowIndex_(payload.id);
+  if (rowIndex === null) {
+    rowIndex = findRecordRowIndexById_(sheet, payload.id);
   }
-  return { status: "error", message: "ไม่พบรายการที่ id นี้: " + payload.id };
+  if (rowIndex === null) {
+    return { status: "error", message: "ไม่พบรายการที่ id นี้: " + payload.id };
+  }
+
+  sheet.getRange(rowIndex, 15).setValue(payload.status || "");
+  sheet.getRange(rowIndex, 16).setValue(new Date().toISOString());
+  sheet.getRange(rowIndex, 17).setValue(payload.note || "");
+  // 🐛 เดิมจุดนี้ไม่เคยล้างแคชของ getRecords()/getMyRecords() เลย — พอบอทอัปเดต
+  // สถานะเสร็จ แผงควบคุม/รายงานฝั่งเว็บอาจยังเห็นสถานะเก่าค้างอยู่ได้นานสุด 30
+  // วินาที (อายุแคชที่ตั้งไว้) ก่อนจะรีเฟรชเป็นค่าล่าสุดเอง
+  invalidateRecordsCache_();
+
+  return { status: "success" };
 }
 
 // ==========================================
