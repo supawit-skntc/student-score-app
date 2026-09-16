@@ -8,6 +8,16 @@ import { todayLocalISO } from '../utils/date';
 
 const TITLE_OPTIONS = ['นาย', 'นาง', 'นางสาว'];
 
+// รหัสสุ่ม 1 ตัวต่อการกรอกฟอร์ม 1 รอบ ใช้กันบันทึกซ้ำฝั่งเซิร์ฟเวอร์ (ดู
+// findRecordByClientRequestId_ ใน Service_Records.gs) — เผื่อเบราว์เซอร์เก่า
+// มากๆ ไม่มี crypto.randomUUID ก็ยังมีรหัสสำรองที่สุ่มไม่ซ้ำพอใช้งานได้
+function generateRequestId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export default function DeductionForm() {
   const [formData, setFormData] = useState({
     date: todayLocalISO(),
@@ -15,7 +25,8 @@ export default function DeductionForm() {
     level: 'ปวช.', year: '1', room: '',
     offense: '', otherOffense: '',
     points: '',
-    teacherName: '' // เคลียร์ค่าเริ่มต้นให้ว่างไว้ก่อน
+    teacherName: '', // เคลียร์ค่าเริ่มต้นให้ว่างไว้ก่อน
+    clientRequestId: generateRequestId(),
   });
 
   const [isScanning, setIsScanning] = useState(false);
@@ -146,11 +157,15 @@ export default function DeductionForm() {
           showConfirmButton: false
         });
 
-        // เคลียร์ค่าในฟอร์มหลังบันทึกสำเร็จ
+        // เคลียร์ค่าในฟอร์มหลังบันทึกสำเร็จ — สุ่ม clientRequestId ใหม่ให้รายการ
+        // ถัดไปด้วย (ถ้าไม่สำเร็จ จะ "ไม่" สุ่มใหม่ เพื่อให้กดบันทึกซ้ำด้วยรหัส
+        // เดิมได้อย่างปลอดภัย เผื่อจริงๆ แล้วรอบก่อนหน้าบันทึกสำเร็จไปแล้วแต่
+        // คำตอบหายกลางทาง — ดู findRecordByClientRequestId_ ฝั่งเซิร์ฟเวอร์)
         setFormData(prev => ({
           ...prev,
           studentId: '', nameTitle: '', studentName: '', fieldOfStudy: '',
-          room: '', offense: '', otherOffense: '', points: ''
+          room: '', offense: '', otherOffense: '', points: '',
+          clientRequestId: generateRequestId(),
         }));
       } else {
         Swal.fire({

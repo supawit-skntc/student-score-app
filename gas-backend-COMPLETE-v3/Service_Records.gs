@@ -32,10 +32,37 @@ function hasSameDayDuplicate_(studentId, offense, dateStr) {
   return false;
 }
 
+// ==========================================
+// 🔁 กันบันทึกซ้ำ (idempotency) — ปุ่ม "บันทึกข้อมูล" เป็นขั้นตอนที่ช้าที่สุดใน
+// ระบบ (สร้าง PDF หลายวินาที) ยิ่ง request ใช้เวลานาน ยิ่งมีโอกาสที่ Google จะทำ
+// response หายกลางทางก่อนถึงเบราว์เซอร์ ทั้งที่บันทึกสำเร็จลงชีตไปแล้วจริง (เจอ
+// เคสจริงแล้ว) ฝั่งเว็บจะสุ่ม clientRequestId มาแนบด้วยทุกครั้งที่เปิดฟอร์ม — ถ้า
+// เจอว่ารหัสนี้เคยถูกบันทึกไปแล้ว ให้ถือว่าสำเร็จทันที ไม่สร้าง PDF ซ้ำ ไม่เพิ่ม
+// แถวซ้ำเด็ดขาด (คอลัมน์ T: Client_Request_Id — ดู setupClientRequestIdColumn)
+// ==========================================
+function findRecordByClientRequestId_(clientRequestId) {
+  const rows = readActiveRecordRows_();
+  if (!rows) return null;
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][19] || "") === String(clientRequestId)) {
+      return { pdfUrl: String(rows[i][13] || "") };
+    }
+  }
+  return null;
+}
+
 function processRecordTransaction(token, data) {
   const session = getSession(token);
 
   try {
+    if (data.clientRequestId) {
+      const existing = findRecordByClientRequestId_(data.clientRequestId);
+      if (existing) {
+        logAudit(data.teacherName, "CREATE_RECORD", data.studentId, "SUCCESS (duplicate submit — already recorded)");
+        return { status: "success", message: "บันทึกสำเร็จ", pdfUrl: existing.pdfUrl };
+      }
+    }
+
     if (NO_REPEAT_SAME_DAY_OFFENSES.indexOf(data.offense) !== -1 &&
         hasSameDayDuplicate_(data.studentId, data.offense, data.date)) {
       logAudit(data.teacherName, "CREATE_RECORD", data.studentId, "BLOCKED_DUPLICATE_SAME_DAY: " + data.offense);
@@ -70,6 +97,9 @@ function processRecordTransaction(token, data) {
       // เพิ่มคอลัมน์นี้จะว่างไว้ ซึ่ง getMyRecords() ถือว่า "เห็นได้ทุกคน" เพื่อไม่
       // ให้ข้อมูลเก่าหายไปจากทุกคนกะทันหันตอนเปิดใช้ฟีเจอร์นี้ครั้งแรก
       session ? session.username : "",
+      // 🆕 T: Client_Request_Id — ดูคำอธิบายเต็มที่ findRecordByClientRequestId_
+      // ด้านบน ใช้กันบันทึกซ้ำเวลา response หายกลางทางแม้บันทึกจริงสำเร็จแล้ว
+      data.clientRequestId || "",
     ];
 
     // 🔒 ขอ lock เฉพาะช่วง "เขียนแถวใหม่" ซึ่งเป็นขั้นตอนเดียวที่ต้องกันชนกัน
@@ -385,4 +415,21 @@ function setupCreatedByColumn() {
   }
 
   Logger.log("ตั้งค่าคอลัมน์ Created_By_Username เรียบร้อยแล้ว");
+}
+
+// ==========================================
+// 7. รันครั้งเดียวจาก Apps Script Editor เช่นกัน เพื่อเตรียมคอลัมน์ T
+// (Client_Request_Id) สำหรับฟีเจอร์กันบันทึกซ้ำ (idempotency) ของปุ่ม
+// "บันทึกข้อมูล" — ดูคำอธิบายเต็มที่ findRecordByClientRequestId_
+// ==========================================
+function setupClientRequestIdColumn() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
+  if (!sheet) throw new Error("ไม่พบแผ่นงาน Records");
+
+  const headerCell = sheet.getRange(1, 20); // คอลัมน์ T
+  if (!headerCell.getValue()) {
+    headerCell.setValue("Client_Request_Id");
+  }
+
+  Logger.log("ตั้งค่าคอลัมน์ Client_Request_Id เรียบร้อยแล้ว");
 }
