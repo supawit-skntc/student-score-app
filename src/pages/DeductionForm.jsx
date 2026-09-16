@@ -3,7 +3,7 @@ import { Camera, Save, Loader2, UserRound, FileWarning } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
 import { OFFENSES, findOffense } from '../data/offenses';
-import { resizeImageForOcr, parseOcrCardData, VALID_MAJORS } from '../utils/ocr';
+import { resizeImageForOcr, parseOcrCardData, MAJORS_BY_LEVEL } from '../utils/ocr';
 import { todayLocalISO } from '../utils/date';
 
 const TITLE_OPTIONS = ['นาย', 'นาง', 'นางสาว'];
@@ -40,6 +40,15 @@ export default function DeductionForm() {
   const setField = (name, value) => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
+
+  // สาขาวิชาของ ปวช./ปวส. เป็นคนละชุดกัน — พอเปลี่ยนระดับ ต้องเคลียร์สาขาวิชาที่
+  // เคยเลือกไว้ทิ้งด้วยเสมอ กันเผลอส่งสาขาของอีกระดับหนึ่งติดไปโดยไม่รู้ตัว (เช่น
+  // เลือก "ช่างยนต์" (ปวช.) ไว้ แล้วเปลี่ยนเป็น ปวส. ทั้งที่สาขานี้ไม่มีในระดับนั้น)
+  const handleLevelChange = (e) => {
+    setFormData((prev) => ({ ...prev, level: e.target.value, fieldOfStudy: '' }));
+  };
+
+  const majorOptions = MAJORS_BY_LEVEL[formData.level] || MAJORS_BY_LEVEL['ปวช.'];
 
   // เลือกฐานความผิดแล้วเติมคะแนนให้อัตโนมัติตามระเบียบข้อ 11 (ยังแก้ไขเองได้
   // เผื่อกรณีที่ระเบียบเปิดช่องให้ใช้ดุลยพินิจ) — "อื่นๆ" ไม่มีคะแนนตายตัวจึงเคลียร์
@@ -238,30 +247,10 @@ export default function DeductionForm() {
               </div>
             </div>
 
-            <div>
-              <label className={labelCls}>สาขาวิชา</label>
-              <div className="flex flex-wrap gap-2">
-                {VALID_MAJORS.map((m) => {
-                  const active = formData.fieldOfStudy === m;
-                  return (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setField('fieldOfStudy', m)}
-                      className={`min-h-11 rounded-[14px] px-3.5 text-[13.5px] font-semibold border-[1.5px] transition-colors
-                        ${active ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-[#EADFDF] bg-white text-ink-soft hover:bg-line-soft'}`}
-                    >
-                      {m}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className={labelCls}>ระดับ</label>
-                <select name="level" value={formData.level} onChange={handleChange} className={`${inputCls} bg-white`}>
+                <select name="level" value={formData.level} onChange={handleLevelChange} className={`${inputCls} bg-white`}>
                   <option value="ปวช.">ปวช.</option>
                   <option value="ปวส.">ปวส.</option>
                 </select>
@@ -275,6 +264,26 @@ export default function DeductionForm() {
               <div>
                 <label className={labelCls}>ห้อง</label>
                 <input type="text" name="room" value={formData.room} onChange={handleChange} required className={inputCls} />
+              </div>
+            </div>
+
+            <div>
+              <label className={labelCls}>สาขาวิชา ({formData.level})</label>
+              <div className="flex flex-wrap gap-2">
+                {majorOptions.map((m) => {
+                  const active = formData.fieldOfStudy === m;
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setField('fieldOfStudy', m)}
+                      className={`min-h-11 rounded-[14px] px-3.5 text-[13.5px] font-semibold border-[1.5px] transition-colors
+                        ${active ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-[#EADFDF] bg-white text-ink-soft hover:bg-line-soft'}`}
+                    >
+                      {m}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
