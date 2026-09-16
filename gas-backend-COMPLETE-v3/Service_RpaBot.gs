@@ -157,15 +157,15 @@ function getRpaStats(token) {
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // นับคิวรอดำเนินการตรงจากชีต Records (เร็วกว่าเรียก getSyncQueue() ที่คืน
-  // รายละเอียดเต็มของทุกแถวซึ่งไม่จำเป็นสำหรับแค่ตัวเลขสรุป)
-  const recordsSheet = ss.getSheetByName("Records");
+  // 🚀 นับคิวรอดำเนินการจาก readActiveRecordRows_() ตัวเดียวกับที่ getRecords()/
+  // getMyRecords() ใช้ (มีแคช 30 วินาทีอยู่แล้ว) แทนการอ่านทั้งชีต Records เองอีก
+  // รอบ — เดิมหน้าแผงควบคุมของ admin เรียก getRecords() กับ getRpaStats() พร้อม
+  // กันทุกครั้งที่เปิดหน้า ทำให้อ่านทั้งชีต Records ซ้ำ 2 รอบโดยไม่จำเป็นทุกครั้ง
+  const recordRows = readActiveRecordRows_();
   let pendingCount = 0;
-  if (recordsSheet) {
-    const data = recordsSheet.getDataRange().getValues();
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][17]) continue; // ข้ามรายการที่ถูกลบ (soft delete)
-      if (String(data[i][14] || "").trim().toLowerCase() === "pending") pendingCount++;
+  if (recordRows) {
+    for (let i = 0; i < recordRows.length; i++) {
+      if (String(recordRows[i][14] || "").trim().toLowerCase() === "pending") pendingCount++;
     }
   }
 
