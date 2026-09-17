@@ -1,7 +1,8 @@
 function doPost(e) {
+  let action = null; // ประกาศไว้นอก try เพื่อให้ catch ด้านล่างอ้างถึงได้ (ใส่ลง log แจ้งเตือนได้ว่า error เกิดตอนเรียก action ไหน)
   try {
     const requestBody = JSON.parse(e.postData.contents);
-    const action = requestBody.action;
+    action = requestBody.action;
     const token = requestBody.token;
     let response = {};
 
@@ -18,6 +19,9 @@ function doPost(e) {
         break;
       case "addRecord":
         response = processRecordTransaction(token, requestBody.data);
+        break;
+      case "generateRecordPdf":
+        response = generateRecordPdf(token, requestBody.id);
         break;
       case "getRecords":
         response = getRecords();
@@ -77,6 +81,7 @@ function doPost(e) {
       .setMimeType(ContentService.MimeType.JSON);
 
   } catch (err) {
+    notifyAdminOfError_(err, { action: action });
     return ContentService.createTextOutput(JSON.stringify({
       status: 'error',
       message: err.toString().replace('Error: ', '')

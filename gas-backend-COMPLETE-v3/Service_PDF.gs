@@ -86,3 +86,140 @@ function generatePDF(data, refId) {
 
     return pdfFile.getUrl();
 }
+
+// ==========================================
+// 🚀 สร้าง PDF แบบแยกจากการบันทึกแถวข้อมูล (ดูเหตุผลเต็มที่ processRecordTransaction
+// ใน Service_Records.gs) — ใช้ร่วมกันทั้งจาก action "generateRecordPdf" ที่ฝั่ง
+// เว็บเรียกทันทีหลังบันทึกสำเร็จ และจาก processPendingPdfs_() ที่รันเบื้องหลังทุก
+// 1 นาทีเป็น fallback เผื่อคำขอแรกล้มเหลว/หายกลางทาง
+// ==========================================
+
+// แปลงแถวดิบจากชีต (คอลัมน์ A-M) กลับเป็นรูปแบบ {studentId, studentName, ...}
+// ที่ generatePDF() ต้องการ — ต้องแปลงย้อนกลับเพราะตอนนี้แถวถูกเขียนไปแล้วก่อนสร้าง
+// PDF (ต่างจากเดิมที่มี "data" จากฟอร์มอยู่ในมือตอนสร้าง PDF อยู่แล้ว)
+function rowToPdfData_(row) {
+  return {
+    date: toIsoDateString_(row[2]),
+    studentId: String(row[3] || ""),
+    nameTitle: String(row[4] || ""),
+    studentName: String(row[5] || ""),
+    fieldOfStudy: String(row[6] || ""),
+    level: String(row[7] || ""),
+    year: String(row[8] || ""),
+    room: String(row[9] || ""),
+    offense: String(row[10] || ""),
+    points: String(row[11] || ""),
+    teacherName: String(row[12] || ""),
+  };
+}
+
+// ⚠️ ห้ามใช้ LockService คลุมฟังก์ชันนี้เด็ดขาด (จะย้อนกลับไปเจอบั๊ก lock
+// contention ตัวเดิมที่เพิ่งแก้ไปตอนย้าย generatePDF ออกจาก lock) ใช้ CacheService
+// เป็น advisory lock แบบเบาแทน — กันแค่กรณี generateRecordPdf (เรียกจากเว็บ) กับ
+// processPendingPdfs_ (trigger เบื้องหลัง) มาชนกันสร้าง PDF ซ้ำสำหรับรายการเดียวกัน
+// พอดี ไม่ได้ป้องกันการเขียนชนกันแบบ LockService (ไม่จำเป็นเพราะคนละแถวคนละไฟล์)
+function generatePdfForRow_(sheet, rowIndex, recordId) {
+  const existingPdfUrl = String(sheet.getRange(rowIndex, 14).getValue() || "");
+  if (existingPdfUrl) {
+    return { status: "success", message: "มีเอกสาร PDF อยู่แล้ว", pdfUrl: existingPdfUrl };
+  }
+
+  const cache = CacheService.getScriptCache();
+  const inProgressKey = 'pdf_generating_' + recordId;
+  if (cache.get(inProgressKey)) {
+    return { status: "pending", message: "กำลังจัดทำเอกสาร PDF อยู่ กรุณาลองใหม่อีกครู่" };
+  }
+  cache.put(inProgressKey, '1', 120); // 2 นาที เผื่อเวลาสร้าง PDF ปกติเหลือเฟือ
+
+  try {
+    const row = sheet.getRange(rowIndex, 1, 1, 13).getValues()[0];
+    const data = rowToPdfData_(row);
+    const pdfUrl = generatePDF(data, recordId);
+    sheet.getRange(rowIndex, 14).setValue(pdfUrl);
+    invalidateRecordsCache_();
+    return { status: "success", message: "จัดทำเอกสาร PDF สำเร็จ", pdfUrl: pdfUrl };
+  } catch (e) {
+    return { status: "error", message: "สร้างเอกสาร PDF ไม่สำเร็จ: " + e.message };
+  } finally {
+    cache.remove(inProgressKey);
+  }
+}
+
+// เรียกจากฝั่งเว็บทันทีหลัง addRecord สำเร็จ (ดู DeductionForm.jsx) — ปลอดภัยที่จะ
+// เรียกซ้ำได้เสมอ (idempotent) เพราะเช็ก existingPdfUrl ก่อนเสมอในฟังก์ชันด้านบน
+function generateRecordPdf(token, recordId) {
+  requireSession(token);
+  if (!recordId) return { status: "error", message: "ไม่พบรหัสรายการ" };
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
+  if (!sheet) return { status: "error", message: "ไม่พบแผ่นงานข้อมูลระบบ" };
+
+  const rowIndex = findRecordRowIndexById_(sheet, recordId);
+  if (rowIndex === null) return { status: "error", message: "ไม่พบรายการที่ id นี้: " + recordId };
+
+  return generatePdfForRow_(sheet, rowIndex, recordId);
+}
+
+// ==========================================
+// รันอัตโนมัติทุก 1 นาทีผ่าน trigger (ตั้งครั้งเดียวด้วย setupPdfBackgroundTrigger
+// ด้านล่าง) เป็นตาข่ายนิรภัยสำหรับรายการที่ generateRecordPdf ตอนบันทึกล้มเหลว/
+// เบราว์เซอร์ปิดไปก่อนเรียกทัน — จำกัดจำนวนรายการต่อรอบไว้กันรันนานเกินไปถ้ามี
+// รายการค้างสะสมเยอะผิดปกติ (ที่เหลือจะถูกจัดการต่อในรอบถัดไปเอง)
+//
+// ถ้ารายการไหนสร้าง PDF ล้มเหลวติดต่อกันครบ 3 ครั้ง จะแจ้งเตือนผู้ดูแลระบบทางอีเมล
+// (ดู notifyAdminOfError_ ใน Service_Ops.gs) กันไม่ให้ค้างเงียบๆ โดยไม่มีใครรู้
+// ==========================================
+const PDF_TRIGGER_BATCH_LIMIT = 15;
+
+function processPendingPdfs_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
+  if (!sheet) return;
+
+  const data = sheet.getDataRange().getValues();
+  const cache = CacheService.getScriptCache();
+  let processed = 0;
+
+  for (let i = 1; i < data.length && processed < PDF_TRIGGER_BATCH_LIMIT; i++) {
+    if (data[i][17]) continue; // ข้ามรายการที่ถูกลบไปแล้ว
+    if (String(data[i][13] || "")) continue; // มี PDF แล้ว ข้าม
+
+    const recordId = String(data[i][0] || "");
+    const rowIndex = i + 1;
+    const result = generatePdfForRow_(sheet, rowIndex, recordId);
+    processed++;
+
+    if (result.status === "error") {
+      const failKey = 'pdf_fail_count_' + recordId;
+      const failCount = parseInt(cache.get(failKey) || '0', 10) + 1;
+      cache.put(failKey, String(failCount), 21600); // นับสะสมได้นานสุด 6 ชม. (อายุ cache สูงสุด)
+      console.error('สร้าง PDF ล้มเหลวสำหรับรายการ ' + recordId + ' (ครั้งที่ ' + failCount + '): ' + result.message);
+
+      if (failCount >= 3) {
+        notifyAdminOfError_(
+          new Error('สร้าง PDF ล้มเหลวซ้ำ ' + failCount + ' ครั้งติดต่อกันสำหรับรายการ ' + recordId + ': ' + result.message),
+          { action: 'processPendingPdfs_' }
+        );
+      }
+    }
+  }
+}
+
+// ==========================================
+// รันครั้งเดียวจาก Apps Script Editor (เลือกฟังก์ชันนี้แล้วกด Run) เพื่อตั้งเวลาให้
+// processPendingPdfs_() รันอัตโนมัติทุก 1 นาที — ลบ trigger เดิมของฟังก์ชันนี้ก่อน
+// เสมอ กันสร้างซ้ำซ้อนถ้าเผลอรันฟังก์ชัน setup นี้มากกว่า 1 ครั้ง
+// ==========================================
+function setupPdfBackgroundTrigger() {
+  ScriptApp.getProjectTriggers().forEach((trigger) => {
+    if (trigger.getHandlerFunction() === 'processPendingPdfs_') {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+
+  ScriptApp.newTrigger('processPendingPdfs_')
+    .timeBased()
+    .everyMinutes(1)
+    .create();
+
+  Logger.log('ตั้งเวลาสร้าง PDF อัตโนมัติทุก 1 นาทีเรียบร้อยแล้ว (ใช้เป็นตาข่ายนิรภัยสำรอง)');
+}

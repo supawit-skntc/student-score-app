@@ -45,7 +45,7 @@ function findRecordByClientRequestId_(clientRequestId) {
   if (!rows) return null;
   for (let i = 0; i < rows.length; i++) {
     if (String(rows[i][19] || "") === String(clientRequestId)) {
-      return { pdfUrl: String(rows[i][13] || "") };
+      return { id: String(rows[i][0] || ""), pdfUrl: String(rows[i][13] || "") };
     }
   }
   return null;
@@ -59,7 +59,7 @@ function processRecordTransaction(token, data) {
       const existing = findRecordByClientRequestId_(data.clientRequestId);
       if (existing) {
         logAudit(data.teacherName, "CREATE_RECORD", data.studentId, "SUCCESS (duplicate submit — already recorded)");
-        return { status: "success", message: "บันทึกสำเร็จ", pdfUrl: existing.pdfUrl };
+        return { status: "success", message: "บันทึกสำเร็จ", id: existing.id, pdfUrl: existing.pdfUrl };
       }
     }
 
@@ -75,18 +75,18 @@ function processRecordTransaction(token, data) {
     const uuid = Utilities.getUuid();
     const timestamp = new Date().toISOString();
 
-    // 🐢 สร้าง PDF (คัดลอกไฟล์ + แปลง Slides เป็น PDF) เป็นขั้นตอนที่ช้าที่สุดใน
-    // ทั้งฟังก์ชันนี้มาก (หลายวินาที บางครั้งนานกว่านั้นถ้า Google ตอบสนองช้า)
-    // ต้องทำ "ก่อน" ขอ lock เสมอ — เดิมโค้ดถือ lock คลุมขั้นตอนนี้ไปด้วย ทำให้ครู
-    // คนอื่นที่กดบันทึกพร้อมกันต้องรอคิวนานผิดปกติ และเสี่ยง lock timeout (10 วิ)
-    // ถ้า PDF ของคนแรกใช้เวลานานกว่านั้น — ย้ายมาไว้นอก lock เพราะการสร้าง PDF
-    // ไม่มีความเสี่ยงเรื่องแถวซ้ำอยู่แล้ว (คนละไฟล์ คนละ uuid กันคนละคน)
-    const pdfUrl = generatePDF(data, uuid);
-
     const rowData = [
       uuid, timestamp, data.date, data.studentId, data.nameTitle || "",
       data.studentName, data.fieldOfStudy, data.level, data.year, data.room,
-      data.offense, data.points, data.teacherName, pdfUrl,
+      data.offense, data.points, data.teacherName,
+      // 🚀 N: pdfUrl — เว้นว่างไว้ก่อนเสมอ "ไม่" สร้าง PDF ในคำขอนี้อีกต่อไป (เดิม
+      // สร้าง PDF ก่อนเขียนแถว ทำให้ปุ่มบันทึกช้า (หลายวินาที) และถ้าขั้นตอนสร้าง
+      // PDF พังกลางทาง รายการทั้งหมดจะไม่ถูกบันทึกเลยแม้แต่แถวเดียว) ตอนนี้บันทึก
+      // แถวข้อมูลก่อนทันที (เร็ว แทบไม่มีทางล้มเหลว) แล้วให้ฝั่งเว็บเรียก action
+      // "generateRecordPdf" ต่อทันทีแบบแยกคำขอ (ดู Service_PDF.gs) — ถ้าคำขอนั้น
+      // ล้มเหลว/หายกลางทาง ข้อมูลนักเรียนก็ยังปลอดภัยอยู่แล้ว ไม่หายไปด้วย และมี
+      // trigger เบื้องหลัง (processPendingPdfs_) คอยสร้างซ้ำให้อัตโนมัติทุก 1 นาที
+      "",
       // 🆕 คอลัมน์ O, P, Q — ให้ RPA Bot (Python) ใช้เป็นคิวงานอ่าน/เขียนสถานะ
       // ผ่าน Google Sheets API โดยตรง (ไม่ผ่าน GAS) ค่าเริ่มต้นทุกรายการใหม่คือ
       // "pending" แปลว่า "ยังไม่เคยถูกส่งไปบันทึกใน RMS"
@@ -117,7 +117,7 @@ function processRecordTransaction(token, data) {
 
     logAudit(data.teacherName, "CREATE_RECORD", data.studentId, "SUCCESS");
 
-    return { status: "success", message: "บันทึกสำเร็จ", pdfUrl: pdfUrl };
+    return { status: "success", message: "บันทึกสำเร็จ", id: uuid, pdfUrl: "" };
 
   } catch (e) {
     logAudit(data.teacherName, "CREATE_RECORD", data.studentId, "FAILED: " + e.message);

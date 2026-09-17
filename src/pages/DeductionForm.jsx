@@ -152,10 +152,22 @@ export default function DeductionForm() {
         Swal.fire({
           icon: 'success',
           title: 'บันทึกสำเร็จ!',
-          text: result.message || 'บันทึกข้อมูลและสร้างเอกสาร PDF เรียบร้อยแล้ว',
+          text: result.message || 'บันทึกข้อมูลเรียบร้อยแล้ว กำลังจัดทำเอกสาร PDF ต่อในเบื้องหลัง',
           timer: 2000,
           showConfirmButton: false
         });
+
+        // 🚀 สั่งสร้าง PDF ต่อทันทีแบบไม่ต้องรอ (fire-and-forget) — ไม่ await เพราะ
+        // ไม่อยากให้ครูต้องรอขั้นตอนที่ช้าที่สุดของระบบก่อนจะกรอกรายการถัดไปได้
+        // ถ้าคำขอนี้ล้มเหลว/หายกลางทาง ไม่ต้องแจ้งเตือนอะไรครู เพราะข้อมูลนักเรียน
+        // บันทึกไปแล้วอย่างปลอดภัยตั้งแต่ addRecord สำเร็จ และมี trigger เบื้องหลัง
+        // (processPendingPdfs_ ใน Service_PDF.gs) คอยสร้างซ้ำให้อัตโนมัติทุก 1 นาที
+        // — เปิดหน้ารายงานอีกครั้งก็จะเห็นลิงก์ PDF เอง
+        if (result.id) {
+          callAPI('generateRecordPdf', { id: result.id }).catch((err) => {
+            console.error('generateRecordPdf (background) error:', err);
+          });
+        }
 
         // เคลียร์ค่าในฟอร์มหลังบันทึกสำเร็จ — สุ่ม clientRequestId ใหม่ให้รายการ
         // ถัดไปด้วย (ถ้าไม่สำเร็จ จะ "ไม่" สุ่มใหม่ เพื่อให้กดบันทึกซ้ำด้วยรหัส

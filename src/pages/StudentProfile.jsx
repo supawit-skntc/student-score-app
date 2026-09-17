@@ -265,7 +265,7 @@ export default function StudentProfile({ initialStudentId }) {
                           <span className="inline-flex items-center rounded-full bg-bad-bg px-2.5 py-0.5 text-[13px] font-bold text-bad-fg">
                             {String(r.points).startsWith('-') ? r.points : `-${r.points}`}
                           </span>
-                          {r.pdfUrl && (
+                          {r.pdfUrl ? (
                             <a
                               href={r.pdfUrl}
                               target="_blank"
@@ -275,6 +275,9 @@ export default function StudentProfile({ initialStudentId }) {
                             >
                               <FileText size={15} />
                             </a>
+                          ) : (
+                            // รายการเพิ่งบันทึกใหม่ๆ PDF จะยังไม่เสร็จทันที (สร้างแบบเบื้องหลัง)
+                            <span className="text-[10px] text-ink-faint" title="กำลังจัดทำเอกสาร PDF อยู่ กรุณารีเฟรชอีกครู่">กำลังจัดทำ...</span>
                           )}
                           {admin && (
                             <button

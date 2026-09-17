@@ -2,7 +2,22 @@
 // ไฟล์ Service_Auth.gs : จัดการระบบเข้าสู่ระบบ
 // ==========================================
 
+// 🔒 กันเดารหัสผ่านซ้ำๆ (brute-force) — ล็อกบัญชีชั่วคราวหลังพิมพ์รหัสผ่านผิดติดกัน
+// เกินจำนวนที่กำหนด เดิมระบบไม่มีการจำกัดจำนวนครั้งที่ลองผิดเลย ใครก็เดารหัสผ่าน
+// ได้ไม่จำกัดจำนวนครั้ง เก็บตัวนับด้วย CacheService (หมดอายุอัตโนมัติ ไม่ต้อง
+// เคลียร์เอง) แยกตามชื่อผู้ใช้งาน ไม่กระทบบัญชีอื่น
+const LOGIN_MAX_ATTEMPTS = 5;
+const LOGIN_LOCKOUT_SECONDS = 900; // 15 นาที
+
 function handleLogin(username, password) {
+  const cache = CacheService.getScriptCache();
+  const attemptKey = 'login_fail_' + String(username).trim();
+  const attempts = parseInt(cache.get(attemptKey) || '0', 10);
+
+  if (attempts >= LOGIN_MAX_ATTEMPTS) {
+    return { status: "error", message: "เข้าสู่ระบบผิดพลาดติดต่อกันหลายครั้งเกินไป กรุณารอประมาณ 15 นาทีแล้วลองใหม่" };
+  }
+
   // ดึงข้อมูลจากแท็บ Users (ต้องสร้างแท็บนี้ใน Google Sheets ด้วย)
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Users");
 
@@ -32,6 +47,7 @@ function handleLogin(username, password) {
 
       // 🔑 ออก session token ให้ frontend เก็บไว้แนบกับทุก request ถัดไป
       const token = createSession(user);
+      cache.remove(attemptKey); // เข้าสำเร็จแล้ว — เคลียร์ตัวนับครั้งที่ผิดทิ้ง
 
       return {
         status: "success",
@@ -42,6 +58,7 @@ function handleLogin(username, password) {
     }
   }
 
+  cache.put(attemptKey, String(attempts + 1), LOGIN_LOCKOUT_SECONDS);
   return { status: "error", message: "ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง" };
 }
 

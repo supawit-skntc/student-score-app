@@ -1,7 +1,7 @@
 // src/services/api.js
 
 // URL ของ Google Apps Script (Web App) จากระบบเดิมของคุณ
-const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwVA7AWqHbWwNFSy0XrjDRjalNpKwEfbOLKJN2HNk-R_eyvOJ7MKTV-T1TS8Xqm_dnE/exec";
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxb5fBithjUkxH5RFHYMXj99ZWVxPWPjSez0M-pNh3f1lP9uPb5yN8REJdpGymQo841/exec";
 
 // Google เด้งหน้า HTML กลับมาแทน JSON เป็นครั้งคราวโดยไม่มีสาเหตุจากโค้ดเราเลย
 // (เจอมาแล้วหลายครั้ง ทั้งฝั่งเว็บนี้และฝั่งบอท RPA) ลองใหม่อัตโนมัติสั้นๆ ก่อนจะ
@@ -17,9 +17,13 @@ const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwVA7AWqHbWwNFSy0Xr
 // ฝั่งเซิร์ฟเวอร์เช็กก่อนเสมอว่ารหัสนี้เคยบันทึกไปแล้วหรือยัง ถ้าเคยแล้วจะตอบ
 // สำเร็จกลับมาเฉยๆ ไม่สร้างรายการซ้ำ ต่อให้ลองส่งซ้ำกี่ครั้งก็ตาม — action อื่นที่
 // เขียนข้อมูล (updateRecord, createUser ฯลฯ) ยังไม่มีกลไกนี้ จึงยังห้ามลองใหม่เอง
+//
+// 'generateRecordPdf' ก็ปลอดภัยเช่นกัน (ดู generatePdfForRow_ ใน Service_PDF.gs)
+// เพราะเช็กก่อนเสมอว่ารายการนี้มี PDF อยู่แล้วหรือยัง ถ้ามีแล้วจะคืนลิงก์เดิมกลับมา
+// เฉยๆ ไม่สร้างไฟล์ซ้ำ ต่อให้เรียกซ้ำกี่ครั้งก็ตาม
 const RETRYABLE_ACTIONS = new Set([
   'login', 'logout', 'getRecords', 'getMyRecords', 'getUsers', 'getAuditLogs', 'getRpaStats',
-  'addRecord',
+  'addRecord', 'generateRecordPdf',
 ]);
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 1200;
@@ -35,7 +39,49 @@ function getStoredToken() {
   }
 }
 
+// ⚡ แคชผลลัพธ์ของ action ที่ "อ่านอย่างเดียว" ไว้สั้นๆ ฝั่งเบราว์เซอร์ — สาเหตุที่
+// ทุกหน้า (Dashboard/Report/ประวัตินักเรียน) รู้สึกช้าไม่ใช่เพราะข้อมูลในชีตเยอะ
+// แต่เป็นต้นทุนคงที่ ~2 วินาทีต่อการเรียก Apps Script Web App 1 ครั้ง (ยืนยันแล้ว
+// จากแท็บ Executions) แคชฝั่งเซิร์ฟเวอร์ (30 วินาที) จึงช่วยเรื่องนี้ไม่ได้เลยเพราะ
+// ยังต้องยิง request ไปกลับอยู่ดี — การแคชฝั่งนี้ตัด request ทิ้งไปเลยถ้าเพิ่งเรียก
+// action เดิมไปหมาดๆ ทำให้สลับหน้าไปมาเร็วขึ้นจริง (0ms แทน ~2 วินาที)
+//
+// อายุแคชสั้นกว่าฝั่งเซิร์ฟเวอร์ (15 วิ < 30 วิ) เพื่อให้เห็นข้อมูลใหม่ไม่ช้ากว่าเดิม
+// มาก และล้างแคชทั้งหมดทันทีเมื่อมี action เขียนข้อมูลสำเร็จ (ปลอดภัยไว้ก่อน ไม่
+// ต้องคิดว่า action ไหนกระทบ cache key ไหนบ้าง)
+const READ_CACHEABLE_ACTIONS = new Set(['getRecords', 'getMyRecords', 'getUsers', 'getAuditLogs', 'getRpaStats']);
+const WRITE_ACTIONS = new Set(['addRecord', 'updateRecord', 'deleteRecord', 'createUser', 'updateUser', 'deleteUser', 'generateRecordPdf']);
+const READ_CACHE_TTL_MS = 15000;
+const readCache = new Map();
+
+function readCacheKey(action) {
+  // getMyRecords/getUsers ฯลฯ ขึ้นกับสิทธิ์ของผู้ใช้ที่ login อยู่ ต้องรวม token
+  // เข้าไปในคีย์ด้วย กันเห็นแคชค้างของผู้ใช้คนอื่นถ้ามีการสลับบัญชีในเบราว์เซอร์เดียวกัน
+  return `${action}:${getStoredToken() || ''}`;
+}
+
 export const callAPI = async (action, data = {}) => {
+  if (READ_CACHEABLE_ACTIONS.has(action)) {
+    const cached = readCache.get(readCacheKey(action));
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.result;
+    }
+  }
+
+  const result = await callAPIUncached(action, data);
+
+  if (result && result.status === 'success') {
+    if (READ_CACHEABLE_ACTIONS.has(action)) {
+      readCache.set(readCacheKey(action), { result, expiresAt: Date.now() + READ_CACHE_TTL_MS });
+    } else if (WRITE_ACTIONS.has(action) || action === 'login' || action === 'logout') {
+      readCache.clear();
+    }
+  }
+
+  return result;
+};
+
+const callAPIUncached = async (action, data = {}) => {
   const maxAttempts = RETRYABLE_ACTIONS.has(action) ? MAX_ATTEMPTS : 1;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {

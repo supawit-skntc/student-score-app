@@ -106,9 +106,12 @@ function getSession(token) {
 
 // โยน Error ถ้าไม่ได้ login หรือ token หมดอายุ — ให้ doPost ใน Main.gs
 // จับ error นี้แล้วตอบกลับเป็น JSON error ตามปกติ
+// 🛡️ เช็ก rate limit ที่นี่ด้วย (ดู checkRateLimit_ ใน Service_Ops.gs) เพราะเป็น
+// จุดเดียวที่ทุก action (ยกเว้น login) ต้องผ่านอยู่แล้ว ครอบคลุมทุก endpoint ทันที
 function requireSession(token) {
   const session = getSession(token);
   if (!session) throw new Error('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
+  checkRateLimit_(token);
   return session;
 }
 

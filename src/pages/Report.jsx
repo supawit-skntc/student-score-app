@@ -407,7 +407,10 @@ export default function Report({ onViewStudent }) {
                               <FileText size={17} />
                             </a>
                           ) : (
-                            <span className="text-ink-faint">-</span>
+                            // รายการที่เพิ่งบันทึกใหม่ๆ PDF จะยังไม่เสร็จทันที (สร้างแบบ
+                            // เบื้องหลังแยกจากปุ่มบันทึก — ดู DeductionForm.jsx) ปกติจะ
+                            // เสร็จภายในไม่กี่วินาที ถ้ายังไม่เห็นให้รีเฟรชหน้านี้อีกครั้ง
+                            <span className="text-[11px] text-ink-faint whitespace-nowrap" title="กำลังจัดทำเอกสาร PDF อยู่ กรุณารีเฟรชอีกครู่">กำลังจัดทำ...</span>
                           )}
 
                           {admin && (
@@ -470,7 +473,7 @@ export default function Report({ onViewStudent }) {
                     >
                       แก้ไข
                     </button>
-                    {record.pdfUrl && (
+                    {record.pdfUrl ? (
                       <a
                         href={record.pdfUrl}
                         target="_blank"
@@ -479,6 +482,8 @@ export default function Report({ onViewStudent }) {
                       >
                         PDF
                       </a>
+                    ) : (
+                      <span className="min-h-11 px-3 rounded-xl border border-line-soft text-ink-faint text-xs flex items-center">กำลังจัดทำ...</span>
                     )}
                     {admin && (
                       <button
