@@ -64,7 +64,10 @@ function createUser(token, newUserData) {
   // ที่ยังไม่มี salt (ดูคำอธิบายที่ hashPassword() ใน Utils.gs)
   // 🆕 คอลัมน์ F (Email) — เก็บไว้ให้ผู้ดูแลระบบเอาไปเพิ่มสิทธิ์ดูเอกสารใน Google
   // Drive เองภายหลัง (ดูตรงชีต Users โดยตรง) ไม่ได้ส่งกลับไปแสดงในหน้าเว็บเลย
-  sheet.appendRow([username, saltedHash, newUserData.fullName || '', newUserData.role || '', salt, newUserData.email || '']);
+  // 🔒 sanitizeForSheetCell_ (ดู Utils.gs) กันช่องชื่อ-นามสกุลใช้ตั้งสูตร Sheets
+  // ได้ — ความเสี่ยงต่ำกว่าฝั่ง Records เพราะหน้านี้ admin เท่านั้นที่เขียนถึง แต่
+  // ทำไว้เผื่อบัญชี admin ถูกขโมย/ใช้งานผิดพลาด ต้นทุนแทบเป็นศูนย์
+  sheet.appendRow([username, saltedHash, sanitizeForSheetCell_(newUserData.fullName || ''), newUserData.role || '', salt, newUserData.email || '']);
 
   logAudit(getSession(token).username, "CREATE_USER", username, "SUCCESS");
   return { status: "success", message: "เพิ่มผู้ใช้งานสำเร็จ" };
@@ -86,7 +89,7 @@ function updateUser(token, updatedData) {
   }
   if (rowIndex === -1) return { status: "error", message: "ไม่พบผู้ใช้งานนี้" };
 
-  sheet.getRange(rowIndex, 3).setValue(updatedData.fullName || '');
+  sheet.getRange(rowIndex, 3).setValue(sanitizeForSheetCell_(updatedData.fullName || ''));
   sheet.getRange(rowIndex, 4).setValue(updatedData.role || '');
 
   // อีเมลไม่ถูกส่งกลับมาแสดงในฟอร์มแก้ไข (getUsersList ไม่คืนค่านี้ไปให้เว็บเลย)

@@ -132,10 +132,21 @@ def run(dry_run: bool) -> None:
     try:
         log.info("เข้าสู่ระบบ RMS ครั้งเดียว แล้วประมวลผลทั้งคิว...")
         run_batch(pending, dry_run=dry_run, on_record_done=handle_record_done)
-    except Exception as e:
-        log.exception("การรันบอททั้ง batch ล้มเหลว (เช่น login RMS ไม่สำเร็จตั้งแต่ต้น)")
+    except RuntimeError as e:
+        # 🧭 RuntimeError ในไฟล์นี้ทั้งหมดมาจากข้อความที่เราตั้งใจเขียนเป็นภาษาไทย
+        # อ่านเข้าใจง่ายไว้ให้แล้ว (เช่น "ยังไม่ได้ตั้งค่าบัญชี RMS", "ยังไม่ได้
+        # ติดตั้งเบราว์เซอร์สำหรับ Playwright") ไม่ต้องพ่วง traceback เต็มมาด้วย
+        # เพราะรกจอ/น่ากลัวเกินความจำเป็นสำหรับผู้ใช้งานที่ไม่ถนัดเขียนโปรแกรม —
+        # เก็บ log.exception() (มี traceback เต็ม) ไว้เฉพาะข้อผิดพลาดที่ไม่คาดคิด
+        # จริงๆ ด้านล่าง ซึ่งน่าจะเป็นบั๊กที่ต้องส่งให้ผู้พัฒนาดูโค้ดต่อ
+        log.error(str(e))
         if not dry_run:
-            report_bot_failure(f"บอทหยุดทำงานกลางคัน (เช่น login RMS ไม่สำเร็จ): {e}")
+            report_bot_failure(str(e))
+        raise
+    except Exception as e:
+        log.exception("การรันบอททั้ง batch ล้มเหลวจากข้อผิดพลาดที่ไม่คาดคิด")
+        if not dry_run:
+            report_bot_failure(f"บอทหยุดทำงานกลางคันจากข้อผิดพลาดที่ไม่คาดคิด: {e}")
         raise
 
     log.info("=== สรุปผล ===")

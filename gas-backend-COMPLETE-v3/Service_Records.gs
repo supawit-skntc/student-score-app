@@ -81,9 +81,12 @@ function processRecordTransaction(token, data) {
     const timestamp = new Date().toISOString();
 
     const rowData = [
-      uuid, timestamp, data.date, data.studentId, data.nameTitle || "",
-      data.studentName, data.fieldOfStudy, data.level, data.year, data.room,
-      data.offense, data.points, data.teacherName,
+      // 🔒 sanitizeForSheetCell_ ครอบทุกช่องที่เป็นข้อความอิสระของผู้ใช้ (ดู
+      // คำอธิบายเต็มที่ Utils.gs) กันสูตร Sheets แอบรันถ้ามีคนเปิดชีตตรงๆ
+      uuid, timestamp, data.date, data.studentId, sanitizeForSheetCell_(data.nameTitle || ""),
+      sanitizeForSheetCell_(data.studentName), sanitizeForSheetCell_(data.fieldOfStudy), data.level, data.year,
+      sanitizeForSheetCell_(data.room), sanitizeForSheetCell_(data.offense), data.points,
+      sanitizeForSheetCell_(data.teacherName),
       // 🚀 N: pdfUrl — เว้นว่างไว้ก่อนเสมอ "ไม่" สร้าง PDF ในคำขอนี้อีกต่อไป (เดิม
       // สร้าง PDF ก่อนเขียนแถว ทำให้ปุ่มบันทึกช้า (หลายวินาที) และถ้าขั้นตอนสร้าง
       // PDF พังกลางทาง รายการทั้งหมดจะไม่ถูกบันทึกเลยแม้แต่แถวเดียว) ตอนนี้บันทึก
@@ -341,17 +344,19 @@ function updateRecord(token, updatedData) {
 
   const newPdfUrl = generatePDF(updatedData, updatedData.id);
 
+  // 🔒 sanitizeForSheetCell_ ครอบทุกช่องที่เป็นข้อความอิสระของผู้ใช้ เหมือนกับ
+  // processRecordTransaction() ด้านบน (ดูคำอธิบายเต็มที่ Utils.gs)
   sheet.getRange(rowIndex, 3).setValue(updatedData.date);
   sheet.getRange(rowIndex, 4).setValue(updatedData.studentId);
-  sheet.getRange(rowIndex, 5).setValue(updatedData.nameTitle);
-  sheet.getRange(rowIndex, 6).setValue(updatedData.studentName);
-  sheet.getRange(rowIndex, 7).setValue(updatedData.fieldOfStudy);
+  sheet.getRange(rowIndex, 5).setValue(sanitizeForSheetCell_(updatedData.nameTitle));
+  sheet.getRange(rowIndex, 6).setValue(sanitizeForSheetCell_(updatedData.studentName));
+  sheet.getRange(rowIndex, 7).setValue(sanitizeForSheetCell_(updatedData.fieldOfStudy));
   sheet.getRange(rowIndex, 8).setValue(updatedData.level);
   sheet.getRange(rowIndex, 9).setValue(updatedData.year);
-  sheet.getRange(rowIndex, 10).setValue(updatedData.room);
-  sheet.getRange(rowIndex, 11).setValue(updatedData.offense);
+  sheet.getRange(rowIndex, 10).setValue(sanitizeForSheetCell_(updatedData.room));
+  sheet.getRange(rowIndex, 11).setValue(sanitizeForSheetCell_(updatedData.offense));
   sheet.getRange(rowIndex, 12).setValue(updatedData.points);
-  sheet.getRange(rowIndex, 13).setValue(updatedData.teacherName);
+  sheet.getRange(rowIndex, 13).setValue(sanitizeForSheetCell_(updatedData.teacherName));
   sheet.getRange(rowIndex, 14).setValue(newPdfUrl);
 
   // 🆕 แก้ไขเนื้อหาแล้ว ควรส่งกลับไป sync ใหม่ใน RMS อีกครั้ง

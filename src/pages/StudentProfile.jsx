@@ -6,6 +6,7 @@ import { statusForPoints } from '../data/thresholds';
 import { academicYearOf, currentAcademicYear } from '../data/academicYear';
 import { isAdmin } from '../utils/permissions';
 import { parsePoints } from '../utils/points';
+import { escapeHtml } from '../utils/html';
 
 // จำกัดจำนวนชิปที่แสดงพร้อมกัน — ถ้าโรงเรียนมีนักเรียนโดนตัดคะแนนหลายร้อยคน
 // (ไม่ใช่แค่ไม่กี่คนซ้ำๆ เหมือนข้อมูลตัวอย่างตอนออกแบบ) รายการจะยาวจนรกจอ ต้อง
@@ -22,26 +23,34 @@ export default function StudentProfile({ initialStudentId }) {
   const [currentUser, setCurrentUser] = useState(null);
   const admin = isAdmin(currentUser);
 
-  const fetchRecords = async () => {
-    setIsLoading(true);
+  const fetchRecords = async (showSpinner = true) => {
+    if (showSpinner) setIsLoading(true);
     try {
       const result = await callAPI('getRecords', {});
       if (result.status === 'success') {
         setRecords(result.data || []);
-      } else {
+      } else if (showSpinner) {
         Swal.fire('ข้อผิดพลาด', result.message || 'ไม่สามารถดึงข้อมูลได้', 'error');
       }
     } catch {
-      Swal.fire('ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
+      if (showSpinner) Swal.fire('ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
     } finally {
-      setIsLoading(false);
+      if (showSpinner) setIsLoading(false);
     }
   };
 
+  // 🔄 โพลรีเฟรชพื้นหลังทุก 45 วิ (แพตเทิร์นเดียวกับ Dashboard.jsx/Report.jsx) —
+  // เดิมหน้านี้ดึงข้อมูลแค่ตอนเปิดหน้าครั้งเดียว ถ้าเปิดค้างไว้ดูประวัตินักเรียน
+  // คนหนึ่งระหว่างที่ PDF ของรายการที่เพิ่งบันทึกใหม่กำลังสร้างเสร็จเบื้องหลัง จะ
+  // ยังโชว์ "กำลังจัดทำ..." ค้างอยู่แม้ PDF เสร็จแล้วจริงๆ จนกว่าจะรีเฟรชเอง —
+  // โพลนี้ไม่โชว์ spinner เต็มจอ/ไม่เด้ง error (showSpinner=false)
   useEffect(() => {
     fetchRecords();
     const stored = localStorage.getItem('currentUser');
     if (stored) setCurrentUser(JSON.parse(stored));
+
+    const intervalId = setInterval(() => fetchRecords(false), 45000);
+    return () => clearInterval(intervalId);
   }, []);
 
   useEffect(() => {
@@ -54,7 +63,10 @@ export default function StudentProfile({ initialStudentId }) {
     const alreadySynced = record.rmsSyncStatus === 'synced';
     Swal.fire({
       title: 'ลบรายการนี้?',
-      html: `${record.offense}<br/>${record.displayDate}` +
+      // 🔒 escapeHtml ก่อนเสมอ — offense มาจากช่องกรอกอิสระของผู้ใช้ ("อื่นๆ: ...")
+      // ถ้าไม่ escape ก่อนแทรกลง html: ตรงๆ จะเปิดช่อง stored XSS ให้รันโค้ดใน
+      // เบราว์เซอร์ของแอดมินที่มาเปิด popup นี้ได้
+      html: `${escapeHtml(record.offense)}<br/>${escapeHtml(record.displayDate)}` +
         (alreadySynced
           ? '<br/><br/><span style="color:#E11D48">รายการนี้ถูกส่งเข้า RMS ไปแล้ว — การลบที่นี่จะไม่ลบข้อมูลใน RMS ให้ ต้องไปลบเองในนั้นด้วยมือ</span>'
           : ''),

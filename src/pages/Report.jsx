@@ -8,6 +8,7 @@ import { academicYearOf, currentAcademicYear } from '../data/academicYear';
 import { downloadCsv } from '../utils/csv';
 import { todayLocalISO } from '../utils/date';
 import { parsePoints } from '../utils/points';
+import { escapeHtml } from '../utils/html';
 import EditRecordModal from '../components/EditRecordModal';
 
 // text-[16px] (ไม่ใช่ 13px) เพราะเป็นฟอนต์ของ <select>/<input type="date"> จริง
@@ -69,10 +70,20 @@ export default function Report({ onViewStudent }) {
     setCurrentUser(user);
     fetchData(user);
     fetchOffenses().then((data) => { setOffenses(data); setOffensesReady(true); });
+
+    // 🔄 โพลรีเฟรชพื้นหลังทุก 45 วิ (แพตเทิร์นเดียวกับ Dashboard.jsx) — เดิมหน้านี้
+    // ดึงข้อมูลแค่ตอนเปิดหน้า/แก้ไข/ลบเท่านั้น รายการที่เพิ่งบันทึกใหม่ PDF จะสร้าง
+    // เสร็จเบื้องหลังไม่กี่วินาทีหลังจากนั้น (ดู generateRecordPdf ใน
+    // DeductionForm.jsx) ถ้าหน้ารายงานเปิดค้างไว้ระหว่างนั้นจะยังโชว์ "กำลัง
+    // จัดทำ..." ค้างอยู่แบบนั้นแม้ PDF เสร็จแล้วจริงๆ จนกว่าจะรีเฟรชเอง — โพลนี้ไม่
+    // โชว์ spinner เต็มจอ/ไม่เด้ง error (showSpinner=false) กันรบกวนขณะกำลังดู/
+    // กรอง/ค้นหาอยู่
+    const intervalId = setInterval(() => fetchData(user, false), 45000);
+    return () => clearInterval(intervalId);
   }, []);
 
-  const fetchData = async (user = currentUser) => {
-    setIsLoading(true);
+  const fetchData = async (user = currentUser, showSpinner = true) => {
+    if (showSpinner) setIsLoading(true);
     try {
       // แอดมิน/กลุ่มเห็นทุกรายการ ใช้ getRecords ตัวเดียวกับหน้าแดชบอร์ด/ประวัติ
       // นักเรียน (ข้อมูลเหมือนกันเป๊ะสำหรับกลุ่มนี้) แทน getMyRecords — เดิมหน้านี้
@@ -85,13 +96,13 @@ export default function Report({ onViewStudent }) {
       const result = await callAPI(action, {});
       if (result.status === 'success') {
         setRecords(result.data);
-      } else {
+      } else if (showSpinner) {
         Swal.fire('ข้อผิดพลาด', result.message || 'ไม่สามารถดึงข้อมูลได้', 'error');
       }
     } catch {
-      Swal.fire('ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
+      if (showSpinner) Swal.fire('ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
     } finally {
-      setIsLoading(false);
+      if (showSpinner) setIsLoading(false);
     }
   };
 
@@ -189,7 +200,10 @@ export default function Report({ onViewStudent }) {
     const alreadySynced = record.rmsSyncStatus === 'synced';
     Swal.fire({
       title: 'ลบรายการนี้?',
-      html: `<b>${record.displayFullName}</b><br/>${record.offense} · ${record.displayDate}` +
+      // 🔒 escapeHtml ทั้ง 3 ค่าก่อนเสมอ — ข้อความเหล่านี้มาจากช่องกรอกอิสระของ
+      // ผู้ใช้ (ชื่อนักเรียน/"อื่นๆ: ...") ถ้าไม่ escape ก่อนแทรกลง html: ตรงๆ จะ
+      // เปิดช่อง stored XSS ให้รันโค้ดในเบราว์เซอร์ของแอดมินที่มาเปิด popup นี้ได้
+      html: `<b>${escapeHtml(record.displayFullName)}</b><br/>${escapeHtml(record.offense)} · ${escapeHtml(record.displayDate)}` +
         (alreadySynced
           ? '<br/><br/><span style="color:#E11D48">รายการนี้ถูกส่งเข้า RMS ไปแล้ว — การลบที่นี่จะไม่ลบข้อมูลใน RMS ให้ ต้องไปลบเองในนั้นด้วยมือ</span>'
           : ''),

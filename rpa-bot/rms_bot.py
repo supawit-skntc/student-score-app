@@ -247,9 +247,24 @@ def run_batch(records: list, dry_run: bool = True, on_record_done=None) -> list:
 
     results = []
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=not dry_run)
-        page = browser.new_page()
         try:
+            browser = p.chromium.launch(headless=not dry_run)
+        except Exception as e:
+            # 🧭 ข้อผิดพลาดที่เจอบ่อยที่สุดตอนตั้งเครื่องใหม่/เครื่องที่ยังไม่เคยรัน
+            # บอทเลย — ลง pip package "playwright" แล้ว แต่ลืมรันคำสั่งดาวน์โหลดตัว
+            # เบราว์เซอร์จริง (เป็นคนละขั้นตอนกัน) ข้อความ error เดิมของ Playwright
+            # เป็นภาษาอังกฤษยาวๆ อ่านเข้าใจยากสำหรับคนไม่ถนัดเขียนโปรแกรม แปลงเป็น
+            # คำสั่งที่ทำตามได้ทันทีแทน
+            if 'Executable doesn' in str(e) or 'playwright install' in str(e):
+                raise RuntimeError(
+                    "ยังไม่ได้ติดตั้งเบราว์เซอร์สำหรับ Playwright (ทำครั้งเดียวหลังลง "
+                    "requirements.txt) — เปิด PowerShell ในโฟลเดอร์ rpa-bot แล้วรันคำสั่ง: "
+                    "playwright install chromium"
+                ) from e
+            raise
+
+        try:
+            page = browser.new_page()
             login(page, RMS_BOT_USERNAME, RMS_BOT_PASSWORD)
 
             for i, record in enumerate(records):
