@@ -1,7 +1,7 @@
 // src/services/api.js
 
 // URL ของ Google Apps Script (Web App) จากระบบเดิมของคุณ
-const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxb5fBithjUkxH5RFHYMXj99ZWVxPWPjSez0M-pNh3f1lP9uPb5yN8REJdpGymQo841/exec";
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxKgnk9MTqy9tzOT3PsQURtb6QHkQQUdM3migTj6miJPjFIBhtwh-v2dFH6PNk8mqHJ/exec";
 
 // Google เด้งหน้า HTML กลับมาแทน JSON เป็นครั้งคราวโดยไม่มีสาเหตุจากโค้ดเราเลย
 // (เจอมาแล้วหลายครั้ง ทั้งฝั่งเว็บนี้และฝั่งบอท RPA) ลองใหม่อัตโนมัติสั้นๆ ก่อนจะ
@@ -21,9 +21,14 @@ const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxb5fBithjUkxH5RFHY
 // 'generateRecordPdf' ก็ปลอดภัยเช่นกัน (ดู generatePdfForRow_ ใน Service_PDF.gs)
 // เพราะเช็กก่อนเสมอว่ารายการนี้มี PDF อยู่แล้วหรือยัง ถ้ามีแล้วจะคืนลิงก์เดิมกลับมา
 // เฉยๆ ไม่สร้างไฟล์ซ้ำ ต่อให้เรียกซ้ำกี่ครั้งก็ตาม
+//
+// 🐛 'ocrScan' เคยตกหล่นไม่ได้อยู่ในลิสต์นี้มาตลอด — เป็นแค่การ "อ่าน" รูปภาพแล้ว
+// ส่งข้อความกลับ ไม่เขียนข้อมูลอะไรเลย ปลอดภัยที่จะลองใหม่ยิ่งกว่า action อื่นๆ ใน
+// ลิสต์นี้เสียอีก การไม่มี retry ทำให้ error ตอบกลับหาย (ปัญหาเดียวกับที่เจอกับปุ่ม
+// บันทึกข้อมูล) ขึ้นมาเป็น error 404 ให้ครูเห็นทันทีโดยไม่มีการลองใหม่อัตโนมัติเลย
 const RETRYABLE_ACTIONS = new Set([
   'login', 'logout', 'getRecords', 'getMyRecords', 'getUsers', 'getAuditLogs', 'getRpaStats',
-  'addRecord', 'generateRecordPdf',
+  'addRecord', 'generateRecordPdf', 'ocrScan',
 ]);
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 1200;

@@ -72,6 +72,12 @@ function scanStudentCard(token, base64Image) {
 
     const code = response.getResponseCode();
     if (code < 200 || code >= 300) {
+      // 🐢 429 = ถูก rate limit ฝั่ง Typhoon (ใช้งานถี่เกินโควตาแผนที่สมัครไว้ชั่วคราว)
+      // ต่างจาก error อื่นๆ ตรงที่ "ลองใหม่อีกครู่" มักจะหายเอง ไม่ใช่ปัญหาที่ต้อง
+      // แก้โค้ด/ตั้งค่าใหม่ — แยกข้อความให้ชัดเจนกว่าเดิม กันสับสนว่าเป็นบั๊ก
+      if (code === 429) {
+        return { status: "error", message: "AI กำลังถูกใช้งานหนักเกินไปในขณะนี้ กรุณารอสักครู่แล้วลองสแกนใหม่อีกครั้ง" };
+      }
       return { status: "error", message: "เรียก AI ไม่สำเร็จ (HTTP " + code + ")" };
     }
 

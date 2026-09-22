@@ -225,7 +225,9 @@ export default function DeductionForm() {
             </span>
             <span className="text-left">
               <span className="block font-display text-[15.5px] font-medium text-brand-800">ถ่ายรูป / อัปโหลดบัตรนักเรียน</span>
-              <span className="block mt-0.5 text-[12.5px] text-[#8A5A66]">{ocrProgress || 'AI จะกรอกรหัส ชื่อ และสาขาวิชาให้อัตโนมัติ'}</span>
+              {/* คำแนะนำเรื่องการถ่ายภาพ — ช่วยความแม่นยำของ AI ได้มากกว่าการปรับ
+                  ค่า resize/quality ในโค้ดเสียอีก (ดู resizeImageForOcr ใน ocr.js) */}
+              <span className="block mt-0.5 text-[12.5px] text-[#8A5A66]">{ocrProgress || 'ถ่ายให้บัตรเต็มเฟรม แสงสว่างพอ ไม่เอียง — AI จะกรอกรหัส ชื่อ และสาขาวิชาให้อัตโนมัติ'}</span>
             </span>
           </div>
         )}

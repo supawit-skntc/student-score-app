@@ -232,6 +232,10 @@ export default function Report({ onViewStudent }) {
 
   // ส่งออกเฉพาะรายการที่กำลังเห็นอยู่บนจอ (ตรงกับตัวกรอง/คำค้นหาปัจจุบัน) — ทำ
   // ทั้งหมดที่ฝั่งเบราว์เซอร์จากข้อมูลที่โหลดมาอยู่แล้ว ไม่ต้องยิง request ใหม่
+  //
+  // รายงานนี้ 1 แถว = 1 ครั้งที่ถูกบันทึก (ไม่รวมคะแนน) — เหมาะกับดูรายละเอียด/
+  // หลักฐานย้อนหลังเป็นรายครั้ง ถ้าอยากได้ยอดรวมต่อคนแบบไม่ซ้ำชื่อ ใช้ปุ่ม
+  // "ส่งออกสรุปรายชื่อ" (handleExportSummaryCsv) แทน
   const handleExportCsv = () => {
     const headers = ['วันที่', 'รหัสนักเรียน', 'ชื่อ-นามสกุล', 'ระดับชั้น', 'สาขาวิชา', 'ฐานความผิด', 'คะแนนที่ถูกหัก', 'สถานะ RMS', 'ผู้บันทึก'];
     const rows = filteredRecords.map((r) => [
@@ -246,6 +250,42 @@ export default function Report({ onViewStudent }) {
       r.teacherName,
     ]);
     downloadCsv(`รายงานตัดคะแนน_${todayLocalISO()}.csv`, headers, rows);
+  };
+
+  // รวม 1 นักเรียน = 1 แถว (รวมคะแนนที่ถูกหักทุกครั้งเข้าด้วยกัน) — แก้ปัญหาที่
+  // รายงานแบบละเอียดด้านบนมีชื่อซ้ำกันหลายแถวเวลานักเรียนคนเดียวโดนบันทึกหลาย
+  // ครั้ง ทำให้ดูภาพรวมยาก เรียงจากคะแนนรวมมากไปน้อย ให้เห็นนักเรียนกลุ่มเสี่ยง
+  // (โดนหักคะแนนสะสมเยอะ) ขึ้นก่อนทันที
+  const handleExportSummaryCsv = () => {
+    const summaryByStudent = new Map();
+    filteredRecords.forEach((r) => {
+      const existing = summaryByStudent.get(r.studentId);
+      if (existing) {
+        existing.totalPoints += parsePoints(r.points);
+        existing.count += 1;
+      } else {
+        summaryByStudent.set(r.studentId, {
+          displayFullName: r.displayFullName,
+          displayLevel: r.displayLevel,
+          fieldOfStudy: r.fieldOfStudy,
+          totalPoints: parsePoints(r.points),
+          count: 1,
+        });
+      }
+    });
+
+    const headers = ['รหัสนักเรียน', 'ชื่อ-นามสกุล', 'ระดับชั้น', 'สาขาวิชา', 'จำนวนครั้งที่ถูกบันทึก', 'คะแนนรวมที่ถูกหัก'];
+    const rows = Array.from(summaryByStudent.entries())
+      .sort((a, b) => b[1].totalPoints - a[1].totalPoints)
+      .map(([studentId, s]) => [
+        studentId,
+        s.displayFullName,
+        s.displayLevel,
+        s.fieldOfStudy,
+        String(s.count),
+        `-${s.totalPoints}`,
+      ]);
+    downloadCsv(`สรุปคะแนนตามรายชื่อ_${todayLocalISO()}.csv`, headers, rows);
   };
 
   return (
@@ -280,10 +320,21 @@ export default function Report({ onViewStudent }) {
             type="button"
             onClick={handleExportCsv}
             disabled={filteredRecords.length === 0}
+            title="1 แถว = 1 ครั้งที่ถูกบันทึก เหมาะกับดูรายละเอียด/หลักฐานย้อนหลัง"
             className="inline-flex items-center gap-1.5 min-h-12 px-4 rounded-[14px] border-[1.5px] border-[#E3D9DA] bg-white text-sm font-semibold text-ink-soft transition-colors hover:bg-line-soft disabled:opacity-40 disabled:hover:bg-white"
           >
             <Download size={16} />
-            ส่งออก CSV
+            ส่งออกรายละเอียด
+          </button>
+          <button
+            type="button"
+            onClick={handleExportSummaryCsv}
+            disabled={filteredRecords.length === 0}
+            title="1 แถว = 1 นักเรียน (รวมคะแนนที่ถูกหักทุกครั้งเข้าด้วยกัน)"
+            className="inline-flex items-center gap-1.5 min-h-12 px-4 rounded-[14px] border-[1.5px] border-[#E3D9DA] bg-white text-sm font-semibold text-ink-soft transition-colors hover:bg-line-soft disabled:opacity-40 disabled:hover:bg-white"
+          >
+            <Download size={16} />
+            ส่งออกสรุปรายชื่อ
           </button>
           <span className="text-sm text-ink-mute font-medium shrink-0">
             พบ <b className="text-ink font-bold">{filteredRecords.length}</b> รายการ
