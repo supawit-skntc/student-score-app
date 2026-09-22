@@ -78,6 +78,9 @@ function doPost(e) {
       case "logRpaEvent":
         response = logRpaEvent(requestBody.data);
         break;
+      case "reportBotFailure":
+        response = reportBotFailure(token, requestBody.data && requestBody.data.message);
+        break;
 
       default:
         response = { status: "error", message: "Invalid Action" };

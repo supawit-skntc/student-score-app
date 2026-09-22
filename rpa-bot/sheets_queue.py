@@ -15,7 +15,7 @@ import time
 import keyring
 import requests
 
-GAS_API_URL = "https://script.google.com/macros/s/AKfycbzRnmmdHJdbGL230s-B56HSKds-aAigiEgP6u4ahLRQw0QROw1PZzuXV-K8O96DmFco/exec"
+GAS_API_URL = "https://script.google.com/macros/s/AKfycbwxKQkW8_HghF6N9Dzb-X4JdEA3Ra7UqjQz27pG5xgMQcTyY9vs4Ej-2tFjuGCs2Rwe/exec"
 SERVICE = "rms-rpa-bot"
 APP_USERNAME = keyring.get_password(SERVICE, "app_username")
 APP_PASSWORD = keyring.get_password(SERVICE, "app_password")
@@ -131,3 +131,22 @@ def log_event(record_id: str, student_id: str, offense: str, status: str,
         })
     except Exception as e:
         _log.warning("บันทึก RPA_Log ไม่สำเร็จ (ไม่กระทบผลลัพธ์หลัก): %s", e)
+
+
+def report_bot_failure(message: str) -> None:
+    """แจ้งผู้ดูแลระบบทางอีเมลเมื่อบอททั้ง batch ล้มเหลว (เช่น login RMS ไม่สำเร็จ
+    ตั้งแต่ต้น หรือทุกรายการในคิวพังหมดในรอบเดียว) — บอทรันแบบไม่มีคนเฝ้า (Task
+    Scheduler) เดิมถ้าเจอปัญหาแบบนี้จะไม่มีใครรู้เลยจนกว่าจะมีคนสังเกตว่า "รอ
+    บันทึกเข้า RMS" ในแดชบอร์ดค้างเพิ่มขึ้นเรื่อยๆ
+
+    ใช้ช่องทางแจ้งเตือนเดียวกับที่ฝั่งเว็บมีอยู่แล้ว (ดู notifyAdminOfError_ ใน
+    Service_Ops.gs ผ่าน action ใหม่ "reportBotFailure" ใน Service_RpaBot.gs) ได้
+    cooldown กันสแปม/ตั้งค่าอีเมลผู้รับมาฟรีๆ ไม่ต้องทำระบบแจ้งเตือนแยกอีกชุด
+
+    ไม่ raise error ถ้าแจ้งไม่สำเร็จ (เช่น อินเทอร์เน็ตหลุดพอดี) เพราะไม่อยากให้
+    การแจ้งเตือนที่ล้มเหลว ไปบัง error จริงที่ main.py กำลังจะ log/raise อยู่แล้ว"""
+    try:
+        _ensure_login()
+        _post("reportBotFailure", data={"message": message})
+    except Exception as e:
+        _log.warning("แจ้งเตือนผู้ดูแลระบบไม่สำเร็จ (ไม่กระทบผลลัพธ์หลัก): %s", e)

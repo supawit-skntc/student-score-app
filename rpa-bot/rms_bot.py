@@ -15,6 +15,7 @@ rms_bot.py — ระบบ RPA สำหรับบันทึกข้อม
 import keyring
 import logging
 import re
+import time
 from playwright.sync_api import sync_playwright, Page, TimeoutError as PlaywrightTimeout
 
 from offense_mapping import get_offense_entry, INCOR_GROUP_ID_BEHAVIOR
@@ -189,35 +190,87 @@ def fill_behavior_record(page: Page, record: dict, dry_run: bool = True) -> dict
     return {"status": "submitted", "incor_id": incor_id}
 
 
-def process_one_record(record: dict, dry_run: bool = True) -> dict:
+# เว้นช่วงระหว่างรายการ ไม่ยิงคำสั่งกรอกฟอร์ม/บันทึกติดกันเร็วเกินไปจนดูเป็นบอท
+# ชัดเกินไปในสายตาระบบ RMS (เดิมเหตุผลนี้ผูกกับ "กันเซสชันเดิมค้างตอน login รอบ
+# ถัดไป" ด้วย แต่ตอนนี้ login แค่ครั้งเดียวต่อ batch แล้ว เหตุผลนั้นไม่มีอยู่แล้ว
+# เหลือแค่เหตุผลเรื่องจังหวะการยิงคำสั่งอย่างเดียว)
+RECORD_PACING_SECONDS = 3
+
+
+def is_logged_out(page: Page) -> bool:
+    """เช็คว่าตอนนี้หลุดเซสชัน RMS แล้วหรือยัง (โดนเด้งกลับไปหน้า login) — ใช้เผื่อ
+    เซสชันหมดอายุกลางทางตอนรัน batch ยาวๆ (คิวเยอะ) ให้ run_batch() เข้าสู่ระบบ
+    ใหม่อัตโนมัติแทนที่จะปล่อยให้ทุกรายการที่เหลือพังยกแผง"""
+    return "p=login" in page.url
+
+
+def process_one_record(page: Page, record: dict, dry_run: bool = True) -> dict:
+    """ประมวลผล 1 รายการด้วย page ที่ login ไว้แล้ว — ไม่เปิด/ปิด browser หรือ
+    login เองอีกต่อไป (ดู run_batch() ด้านล่างเป็นผู้ดูแล browser/session ทั้งหมด
+    ให้ทั้ง batch ใช้ร่วมกัน แทนที่จะเปิด browser + login ใหม่ทุกรายการแบบเดิม ซึ่ง
+    ช้ามากเวลาคิวยาว (login ครั้งละ ~10-20 วิ) และเสี่ยงโดนระบบความปลอดภัยของ RMS
+    มองว่า login ถี่ผิดปกติจากบัญชีเดียวกัน)"""
+    try:
+        go_to_discipline_search(page)
+
+        if not search_student(page, record["studentId"]):
+            return {"status": "error", "message": f"ไม่พบนักเรียนรหัส {record['studentId']} ในระบบ RMS"}
+
+        return fill_behavior_record(page, record, dry_run=dry_run)
+
+    except AlreadySynced:
+        return {"status": "synced", "message": "มีอยู่ใน RMS แล้ว (ตรวจพบจาก REF tag)"}
+    except RecordFlaggedForReview as e:
+        log.warning("ต้องตรวจสอบด้วยคน: %s", e)
+        return {"status": "needs_review", "message": str(e)}
+    except Exception as e:
+        log.exception("เกิดข้อผิดพลาดระหว่างประมวลผล")
+        return {"status": "error", "message": str(e)}
+
+
+def run_batch(records: list, dry_run: bool = True, on_record_done=None) -> list:
+    """login RMS แค่ครั้งเดียว แล้ววนประมวลผลทุกรายการในคิวด้วย browser/session
+    เดียวกัน — เรียก on_record_done(record, outcome, duration_seconds) ทันทีหลัง
+    แต่ละรายการเสร็จถ้าใส่มา (ให้ main.py รายงานสถานะกลับ GAS แบบเรียลไทม์ทีละ
+    รายการเหมือนเดิมทุกประการ ไม่ต้องรอจบทั้ง batch ก่อน กันผลลัพธ์หายไปทั้งหมดถ้า
+    batch ล้มกลางทาง) คืนค่า list ของ (record, outcome, duration_seconds) ทั้งหมด
+    ด้วยเผื่อผู้เรียกอยากได้สรุปตอนจบ
+
+    raise ถ้า login RMS ครั้งแรกไม่สำเร็จเลย (ยังไม่ได้ประมวลผลอะไรเลยสักรายการ)
+    ให้ main.py จับไปแจ้งเตือนผู้ดูแลระบบต่อได้ว่าทั้ง batch ไม่ได้เริ่มทำงานจริง
+    """
     if not RMS_BOT_USERNAME or not RMS_BOT_PASSWORD:
         raise RuntimeError(
             "ยังไม่ได้ตั้งค่าบัญชี RMS — รัน setup_credentials.py "
             "(หรือดับเบิลคลิก setup_credentials.bat) ก่อนครับ"
         )
 
+    results = []
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=not dry_run)
         page = browser.new_page()
         try:
             login(page, RMS_BOT_USERNAME, RMS_BOT_PASSWORD)
-            go_to_discipline_search(page)
 
-            if not search_student(page, record["studentId"]):
-                return {"status": "error", "message": f"ไม่พบนักเรียนรหัส {record['studentId']} ในระบบ RMS"}
+            for i, record in enumerate(records):
+                if is_logged_out(page):
+                    log.warning("เซสชัน RMS ดูเหมือนจะหมดอายุกลางทาง (คิวยาว) — เข้าสู่ระบบใหม่อัตโนมัติ")
+                    login(page, RMS_BOT_USERNAME, RMS_BOT_PASSWORD)
 
-            return fill_behavior_record(page, record, dry_run=dry_run)
+                started_at = time.time()
+                outcome = process_one_record(page, record, dry_run=dry_run)
+                duration_seconds = time.time() - started_at
 
-        except AlreadySynced:
-            return {"status": "synced", "message": "มีอยู่ใน RMS แล้ว (ตรวจพบจาก REF tag)"}
-        except RecordFlaggedForReview as e:
-            log.warning("ต้องตรวจสอบด้วยคน: %s", e)
-            return {"status": "needs_review", "message": str(e)}
-        except Exception as e:
-            log.exception("เกิดข้อผิดพลาดระหว่างประมวลผล")
-            return {"status": "error", "message": str(e)}
+                results.append((record, outcome, duration_seconds))
+                if on_record_done:
+                    on_record_done(record, outcome, duration_seconds)
+
+                if i < len(records) - 1:
+                    time.sleep(RECORD_PACING_SECONDS)
         finally:
             browser.close()
+
+    return results
 
 
 if __name__ == "__main__":
@@ -228,4 +281,4 @@ if __name__ == "__main__":
         "date": "2026-08-27",
         "detail": "ทดสอบระบบ RPA (dry run)",
     }
-    print(process_one_record(sample_record, dry_run=True))
+    print(run_batch([sample_record], dry_run=True))

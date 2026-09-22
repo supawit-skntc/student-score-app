@@ -14,10 +14,13 @@ setup_credentials.bat) เพื่อตั้งค่าบัญชีก่
 
 import argparse
 import logging
+import os
+import subprocess
+import sys
 import time
 
-from sheets_queue import get_pending_records, update_status, log_event
-from rms_bot import process_one_record
+from sheets_queue import get_pending_records, update_status, log_event, report_bot_failure
+from rms_bot import run_batch
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("main")
@@ -29,6 +32,61 @@ STATUS_MAP = {
     "error": "error",
 }
 
+# ==========================================
+# 🔒 กันรันซ้อนกัน — เดิมไม่มีการล็อกเลย ถ้าคิวค้างเยอะจนรันไม่ทันภายในรอบถัดไปที่
+# Windows Task Scheduler จะสั่งรัน (เช่นตั้งไว้ทุก 15 นาที) จะมีบอทตัวที่สองเปิดขึ้น
+# มาซ้อนกับตัวแรกที่ยังไม่เสร็จ ทั้งสอง instance อาจดึงคิวชุดเดียวกันมาพร้อมกัน มี
+# ช่วงเวลาสั้นๆ ที่ REF tag ยังไม่ทันปรากฏในหน้า RMS ก่อนทั้งคู่จะกดบันทึกพร้อมกัน
+# — เสี่ยงบันทึกข้อมูลซ้ำจริงใน RMS ล็อกนี้กันไว้ไม่ให้เกิดกรณีนั้น
+#
+# เช็คด้วย PID จริง (ผ่าน tasklist ที่มีอยู่แล้วในทุกเครื่อง Windows ไม่ต้อง
+# ติดตั้งไลบรารีเพิ่ม) แทนการเดาจากเวลาที่ไฟล์ค้างอยู่ — กันกรณีบอทตัวก่อน crash
+# กลางคันไม่ทันลบไฟล์ lock ทิ้ง (ถ้าใช้แค่ "ไฟล์เก่ากว่า N นาทีถือว่าค้าง" อาจไป
+# ตัดสินผิดว่าบอทที่กำลังรันจริงอยู่ "ค้าง" ทั้งที่ยังไม่ตายจริง)
+# ==========================================
+LOCK_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".bot.lock")
+
+
+def _pid_is_running(pid: int) -> bool:
+    try:
+        output = subprocess.check_output(
+            ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+            text=True, stderr=subprocess.DEVNULL,
+        )
+        return str(pid) in output
+    except Exception:
+        # เช็คไม่ได้ (เช่น รันบนเครื่องที่ไม่ใช่ Windows) — ปลอดภัยไว้ก่อน ถือว่า
+        # "อาจยังรันอยู่" กันปล่อยให้รันซ้อนโดยไม่ตั้งใจ
+        return True
+
+
+def acquire_lock() -> bool:
+    """คืนค่า True ถ้าได้ล็อก (ไม่มีบอทตัวอื่นรันอยู่จริง ปลอดภัยที่จะรันต่อ) —
+    ถ้ามีไฟล์ล็อกค้างจากโปรเซสที่ยัง "มีชีวิต" อยู่จริง คืน False ให้ผู้เรียกข้าม
+    รอบนี้ไปเฉยๆ (ไม่ใช่ error)"""
+    if os.path.exists(LOCK_FILE_PATH):
+        try:
+            with open(LOCK_FILE_PATH, "r") as f:
+                old_pid = int(f.read().strip())
+        except (ValueError, OSError):
+            old_pid = None
+
+        if old_pid and _pid_is_running(old_pid):
+            return False
+        # ไฟล์ล็อกค้างจากโปรเซสที่ตายไปแล้ว (crash กลางคันไม่ทันลบไฟล์) —
+        # ปลอดภัยที่จะยึดล็อกต่อ
+
+    with open(LOCK_FILE_PATH, "w") as f:
+        f.write(str(os.getpid()))
+    return True
+
+
+def release_lock() -> None:
+    try:
+        os.remove(LOCK_FILE_PATH)
+    except OSError:
+        pass
+
 
 def run(dry_run: bool) -> None:
     pending = get_pending_records()
@@ -39,23 +97,17 @@ def run(dry_run: bool) -> None:
 
     counts = {"synced": 0, "needs_review": 0, "error": 0, "dry_run": 0}
 
-    for record in pending:
-        log.info("--- กำลังประมวลผล %s (นักเรียน %s) ---", record["id"], record["studentId"])
-        started_at = time.time()
+    def handle_record_done(record, outcome, duration_seconds):
+        log.info("--- ประมวลผลเสร็จ %s (นักเรียน %s) ---", record["id"], record["studentId"])
+        result_status = outcome["status"]
 
-        # 🛡️ ครอบทั้งการประมวลผลและการรายงานสถานะกลับด้วย try/except เดียวกัน —
-        # เดิมถ้ามีข้อผิดพลาดตรงไหนก็ตาม (แม้แค่ report สถานะกลับไม่สำเร็จ ทั้งที่
-        # บันทึกเข้า RMS จริงไปแล้ว) จะทำให้ทั้งฟังก์ชัน run() พังทันที เหลือ
-        # รายการที่ยังไม่ถึงคิวไม่ถูกแตะเลยแม้แต่รายการเดียว ทั้งที่ไม่เกี่ยวข้อง
-        # กับปัญหาที่เพิ่งเจอเลย (เช่น Google เด้ง error ชั่วคราวแค่ตอนนั้น)
-        # ตอนนี้ข้ามไปทำรายการถัดไปแทน แล้วสรุปให้เห็นตอนจบว่าพังไปกี่รายการ —
-        # ปลอดภัยเสมอเพราะกลไกกันซ้ำด้วย REF tag ใน rms_bot.py จะตรวจพบเองว่า
-        # รายการไหนบันทึกเข้า RMS ไปแล้วจริงตอนรันรอบถัดไป ไม่มีทางบันทึกซ้ำ
+        # 🛡️ ครอบการรายงานสถานะกลับด้วย try/except — เดิมถ้า report สถานะกลับไม่
+        # สำเร็จ (แม้บันทึกเข้า RMS จริงไปแล้ว) จะทำให้ทั้ง run() พังทันที เหลือ
+        # รายการที่ยังไม่ถึงคิวไม่ถูกแตะเลยแม้แต่รายการเดียว ตอนนี้ข้ามไปรายการ
+        # ถัดไปแทน แล้วสรุปให้เห็นตอนจบว่าพังไปกี่รายการ — ปลอดภัยเสมอเพราะกลไก
+        # กันซ้ำด้วย REF tag ใน rms_bot.py จะตรวจพบเองว่ารายการไหนบันทึกเข้า RMS
+        # ไปแล้วจริงตอนรันรอบถัดไป ไม่มีทางบันทึกซ้ำ
         try:
-            outcome = process_one_record(record, dry_run=dry_run)
-            duration_seconds = time.time() - started_at
-            result_status = outcome["status"]
-
             if dry_run:
                 counts["dry_run"] += 1
                 log.info("[DRY RUN] ผลลัพธ์: %s (%.1f วินาที) — ไม่บันทึก log เพราะเป็นการทดสอบ", outcome, duration_seconds)
@@ -71,21 +123,34 @@ def run(dry_run: bool) -> None:
         except Exception as e:
             counts["error"] = counts.get("error", 0) + 1
             log.exception(
-                "รายการ %s ล้มเหลวระหว่างประมวลผลหรือรายงานสถานะกลับ — ข้ามไปทำรายการถัดไป "
+                "รายการ %s ล้มเหลวระหว่างรายงานสถานะกลับ — ข้ามไปทำรายการถัดไป "
                 "(ถ้าบันทึกเข้า RMS ไปแล้วจริง รอบหน้าจะตรวจพบจาก REF tag แล้วมาร์กสำเร็จให้เอง "
                 "ไม่มีทางบันทึกซ้ำ): %s",
                 record["id"], e,
             )
 
-        # เว้นช่วงสั้นๆ ระหว่างรายการ ลดโอกาสที่เซสชันเดิมจะยังค้างอยู่ตอน login รอบถัดไป
-        # และไม่ยิง request รัวเกินไปจนอาจโดนระบบ RMS มองเป็นพฤติกรรมผิดปกติ
-        if record is not pending[-1]:
-            time.sleep(3)
+    try:
+        log.info("เข้าสู่ระบบ RMS ครั้งเดียว แล้วประมวลผลทั้งคิว...")
+        run_batch(pending, dry_run=dry_run, on_record_done=handle_record_done)
+    except Exception as e:
+        log.exception("การรันบอททั้ง batch ล้มเหลว (เช่น login RMS ไม่สำเร็จตั้งแต่ต้น)")
+        if not dry_run:
+            report_bot_failure(f"บอทหยุดทำงานกลางคัน (เช่น login RMS ไม่สำเร็จ): {e}")
+        raise
 
     log.info("=== สรุปผล ===")
     for status, count in counts.items():
         if count:
             log.info("  %s: %d รายการ", status, count)
+
+    # 🔔 ทุกรายการในคิวพังหมดในรอบเดียว (ไม่ใช่แค่บางรายการ) เป็นสัญญาณว่าอาจมี
+    # ปัญหาระบบ (RMS เปลี่ยนหน้าเว็บ, บัญชีบอทถูกล็อก ฯลฯ) ไม่ใช่แค่ปัญหาของ
+    # รายการเดียว — แจ้งผู้ดูแลระบบให้มาดูก่อนที่คิวจะค้างสะสมนานเกินไป
+    if not dry_run and pending and counts.get("error", 0) == len(pending):
+        report_bot_failure(
+            f"ทุกรายการในคิว ({len(pending)} รายการ) ล้มเหลวหมดในรอบนี้ — "
+            "อาจมีปัญหาระบบ ไม่ใช่แค่รายการเดียว กรุณาตรวจสอบ log/ชีต RPA_Log"
+        )
 
 
 if __name__ == "__main__":
@@ -95,4 +160,11 @@ if __name__ == "__main__":
         help="กรอกฟอร์มทดสอบทุกรายการแต่ไม่กดบันทึกจริง และไม่แก้สถานะในเว็บแอป",
     )
     args = parser.parse_args()
-    run(dry_run=args.dry_run)
+
+    if not acquire_lock():
+        log.warning("มีบอทอีกตัวกำลังทำงานอยู่แล้ว (ตรวจพบจากไฟล์ .bot.lock) — ข้ามรอบนี้ไปก่อน กันบันทึกซ้ำซ้อนใน RMS")
+        sys.exit(0)
+    try:
+        run(dry_run=args.dry_run)
+    finally:
+        release_lock()

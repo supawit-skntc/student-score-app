@@ -31,6 +31,9 @@ rpa-bot/log_rpa_bot/
 __pycache__/
 *.pyc
 
+# RPA bot single-instance lock file (runtime state, not source — see main.py)
+rpa-bot/.bot.lock
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

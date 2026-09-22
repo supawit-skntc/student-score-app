@@ -118,6 +118,19 @@ function updateSyncStatus(payload) {
 }
 
 // ==========================================
+// 3.1 รับแจ้งจากบอท RPA (Python) เมื่อรันทั้ง batch ล้มเหลว (เช่น login RMS ไม่
+// สำเร็จตั้งแต่ต้น หรือทุกรายการในคิวพังหมดในรอบเดียว — ดู report_bot_failure()
+// ใน sheets_queue.py) — ใช้ช่องทางแจ้งเตือนอีเมลเดียวกับที่มีอยู่แล้วสำหรับ error
+// ฝั่งเว็บ (ดู notifyAdminOfError_ ใน Service_Ops.gs) ไม่ต้องสร้างกลไกแจ้งเตือน
+// แยกต่างหากสำหรับบอทเลย ได้ cooldown กันสแปม/ตั้งค่าอีเมลผู้รับมาฟรีๆ
+// ==========================================
+function reportBotFailure(token, message) {
+  requireSession(token);
+  notifyAdminOfError_(new Error(String(message || 'ไม่ทราบสาเหตุ')), { action: 'rpa-bot' });
+  return { status: "success" };
+}
+
+// ==========================================
 // 4. บันทึกประวัติการทำงานของ RPA Bot ลงชีตแยกต่างหาก "RPA_Log"
 // สร้างชีตนี้อัตโนมัติถ้ายังไม่มี — ไม่ต้องตั้งค่าอะไรล่วงหน้า
 // เก็บเป็นประวัติสะสมทุกครั้งที่รัน (ต่างจาก RMS_Sync_Status ในชีต Records ที่
