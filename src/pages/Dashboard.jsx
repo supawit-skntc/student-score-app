@@ -24,25 +24,45 @@ export default function Dashboard({ onViewStudent }) {
   const [currentUser, setCurrentUser] = useState(null);
   const admin = isAdmin(currentUser);
 
+  // 🔄 รีเฟรชข้อมูลอัตโนมัติเป็นระยะ — เดิมหน้านี้ดึงข้อมูลแค่ตอนเปิดหน้าครั้ง
+  // เดียว ถ้าเปิดแผงควบคุมค้างไว้จอมอนิเตอร์ (การใช้งานจริงของแอดมิน — เปิดคอม
+  // ไว้ดูภาพรวมทั้งวัน) แล้วมีครูคนอื่นบันทึกรายการใหม่ระหว่างนั้น จะไม่เห็นการ
+  // เปลี่ยนแปลงเลยจนกว่าจะรีเฟรชหน้าเว็บเอง — โพลทุก 45 วิ (นานกว่าแคชฝั่งเว็บ 15
+  // วิ เพื่อให้ได้ข้อมูลสดจริงทุกรอบ ไม่ใช่แค่แคชเดิม) การโพลรอบถัดๆ ไปไม่โชว์
+  // หน้าโหลดเต็มจอ/ไม่เด้ง error popup (showSpinner=false) กันจอกระพริบ/รบกวนแอดมิน
+  // ที่กำลังดูอยู่เฉยๆ ถ้าพลาดชั่วคราวรอบเดียวก็แค่ลองใหม่เองอัตโนมัติในรอบถัดไป
   useEffect(() => {
-    (async () => {
-      setIsLoading(true);
+    let cancelled = false;
+
+    const loadRecords = async (showSpinner) => {
+      if (showSpinner) setIsLoading(true);
       try {
         const result = await callAPI('getRecords', {});
+        if (cancelled) return;
         if (result.status === 'success') {
           setRecords(result.data || []);
-        } else {
+        } else if (showSpinner) {
           Swal.fire('ข้อผิดพลาด', result.message || 'ไม่สามารถดึงข้อมูลได้', 'error');
         }
       } catch {
-        Swal.fire('ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
+        if (!cancelled && showSpinner) {
+          Swal.fire('ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
+        }
       } finally {
-        setIsLoading(false);
+        if (!cancelled && showSpinner) setIsLoading(false);
       }
-    })();
+    };
+
+    loadRecords(true);
+    const intervalId = setInterval(() => loadRecords(false), 45000);
 
     const stored = localStorage.getItem('currentUser');
     if (stored) setCurrentUser(JSON.parse(stored));
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
   }, []);
 
   // สถิติละเอียดของ RPA Bot (อัตราสำเร็จ, เวลาเฉลี่ย ฯลฯ) เป็นรายละเอียดเชิง

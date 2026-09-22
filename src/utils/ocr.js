@@ -81,14 +81,24 @@ const ALL_MAJORS = [...new Set([...MAJORS_PVC, ...MAJORS_PVS])];
 
 // แปลง JSON ดิบที่ AI อ่านจากบัตรนักศึกษาให้เป็นข้อมูลสะอาดพร้อมกรอกลงฟอร์ม —
 // แยกออกมาจาก handleImageUpload เพราะเป็นตรรกะการแปลงข้อมูลล้วนๆ ไม่เกี่ยวกับ UI
+//
+// ⚠️ studentId/level/สาขาวิชา ด้านล่างเชื่อฟิลด์ที่ AI แยกมาให้แล้วโดยตรงก่อนเสมอ
+// (ไม่ค้นหาจาก fullText ทั้งก้อนเป็นหลักเหมือนเดิม) เพราะบัตรนักศึกษามีข้อความที่
+// สับสนกันได้ง่ายอยู่ใกล้ๆ กัน เช่น "เลขประจำตัว" (11 หลัก) กับ "เลขประจำตัว
+// ประชาชน" (13 หลัก) — ถ้าค้นทั้งก้อนเจอเลข 11 หลักที่ไหนก็ได้ในข้อความทั้งหมด
+// (รวมถึงเลขที่หลุดมาจากฟิลด์อื่นโดยไม่ตั้งใจตอน AI อ่านผิด) เสี่ยงกรอกผิดคนได้
+// fullText ยังเก็บไว้ใช้เป็น fallback สุดท้ายเท่านั้น เผื่อฟิลด์ที่ AI แยกมาให้
+// ว่างเปล่า/ผิดรูปแบบไปเลย
 export function parseOcrCardData(extractedData) {
   const fullText = JSON.stringify(extractedData);
 
-  // 1. จัดการสาขาวิชา — จับคู่กับสาขาของทั้ง ปวช. และ ปวส. รวมกัน เพราะยังไม่รู้
-  // ระดับของบัตรใบนี้ล่วงหน้า (ดูคำอธิบาย ALL_MAJORS ด้านบน)
+  // 1. จัดการสาขาวิชา — จับคู่จาก rawMajorLine ที่ AI แยกมาให้ก่อนเสมอ (ไม่ใช่
+  // ค้นทั้งก้อน) รวมกับสาขาของทั้ง ปวช. และ ปวส. เพราะยังไม่รู้ระดับของบัตรใบนี้
+  // ล่วงหน้า (ดูคำอธิบาย ALL_MAJORS ด้านบน)
+  const majorSearchText = extractedData.rawMajorLine || fullText;
   let cleanMajor = '';
   for (const major of ALL_MAJORS) {
-    if (fullText.includes(major)) {
+    if (majorSearchText.includes(major)) {
       cleanMajor = major;
       break;
     }
@@ -123,13 +133,25 @@ export function parseOcrCardData(extractedData) {
     cleanName = cleanName.substring(3).trim();
   }
 
-  // 3. จัดการรหัสนักศึกษา (11 หลัก) และ ระดับชั้น
+  // 3. จัดการรหัสนักศึกษา (11 หลัก) — เชื่อฟิลด์ studentId ที่ AI แยกมาให้ก่อน
+  // เสมอ (ตัดอักขระที่ไม่ใช่ตัวเลขทิ้งเผื่อมีขีด/เว้นวรรคปน) ถ้าไม่ใช่เลข 11 หลัก
+  // จริงๆ (ว่าง/มีตัวอักษรปนจนตัดแล้วยังไม่ครบ) ค่อย fallback ไปหาในข้อความทั้ง
+  // ก้อนเป็นทางเลือกสุดท้าย — ดูคำอธิบายเต็มด้านบนว่าทำไมห้ามค้นทั้งก้อนเป็นหลัก
+  const rawStudentIdDigits = String(extractedData.studentId || '').replace(/\D/g, '');
   const idMatch = fullText.match(/\d{11}/);
-  const cleanStudentId = idMatch ? idMatch[0] : '';
+  const cleanStudentId = /^\d{11}$/.test(rawStudentIdDigits)
+    ? rawStudentIdDigits
+    : (idMatch ? idMatch[0] : '');
 
+  // ระดับชั้น — เชื่อฟิลด์ level ที่ AI แยกมาให้ก่อนเช่นกัน เดิมเช็กจาก fullText
+  // ทั้งก้อนแบบไม่มีเงื่อนไข ถ้าเจอทั้ง "ปวช"/"ปวส" ปนกันในข้อความ (เช่น หลุดมา
+  // จากฟิลด์อื่น) จะเลือก "ปวส." เสมอเพราะเช็กทับท้ายสุดโดยไม่มีเหตุผลรองรับ
+  const rawLevel = String(extractedData.level || '');
   let cleanLevel = '';
-  if (fullText.includes('ปวช')) cleanLevel = 'ปวช.';
-  if (fullText.includes('ปวส')) cleanLevel = 'ปวส.';
+  if (rawLevel.includes('ปวส')) cleanLevel = 'ปวส.';
+  else if (rawLevel.includes('ปวช')) cleanLevel = 'ปวช.';
+  else if (fullText.includes('ปวส')) cleanLevel = 'ปวส.';
+  else if (fullText.includes('ปวช')) cleanLevel = 'ปวช.';
 
   return {
     studentId: cleanStudentId,

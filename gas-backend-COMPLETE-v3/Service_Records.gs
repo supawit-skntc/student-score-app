@@ -12,8 +12,9 @@ function toIsoDateString_(rawDate) {
 }
 
 // เช็กว่านักเรียนคนนี้เคยถูกบันทึกฐานความผิดเดียวกันนี้ในวันเดียวกันไปแล้วหรือยัง
-function hasSameDayDuplicate_(studentId, offense, dateStr) {
-  const rows = readActiveRecordRows_();
+// — รับ rows ที่อ่านมาแล้วจากผู้เรียก (ดูเหตุผลที่ processRecordTransaction()
+// อ่านครั้งเดียวแล้วส่งต่อแทนที่จะให้ฟังก์ชันนี้อ่านเอง)
+function hasSameDayDuplicate_(rows, studentId, offense, dateStr) {
   if (!rows) return false;
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -31,9 +32,13 @@ function hasSameDayDuplicate_(studentId, offense, dateStr) {
 // เคสจริงแล้ว) ฝั่งเว็บจะสุ่ม clientRequestId มาแนบด้วยทุกครั้งที่เปิดฟอร์ม — ถ้า
 // เจอว่ารหัสนี้เคยถูกบันทึกไปแล้ว ให้ถือว่าสำเร็จทันที ไม่สร้าง PDF ซ้ำ ไม่เพิ่ม
 // แถวซ้ำเด็ดขาด (คอลัมน์ T: Client_Request_Id — ดู setupClientRequestIdColumn)
+//
+// รับ rows ที่อ่านมาแล้วจากผู้เรียกเหมือนกับ hasSameDayDuplicate_() ด้านบน (เดิม
+// ทั้งสองฟังก์ชันนี้ต่างคนต่างเรียก readActiveRecordRows_() เอง ทำให้ทุกครั้งที่
+// บันทึกฐานความผิดที่ตัดซ้ำวันเดียวกันไม่ได้ (แต่งกาย/ทรงผม) ต้องอ่านทั้งชีต/แคช
+// Records ซ้ำ 2 รอบก่อนจะรู้ผล — เห็นได้ชัดว่าช้ากว่าการบันทึกฐานความผิดอื่นจริงๆ)
 // ==========================================
-function findRecordByClientRequestId_(clientRequestId) {
-  const rows = readActiveRecordRows_();
+function findRecordByClientRequestId_(rows, clientRequestId) {
   if (!rows) return null;
   for (let i = 0; i < rows.length; i++) {
     if (String(rows[i][19] || "") === String(clientRequestId)) {
@@ -47,8 +52,12 @@ function processRecordTransaction(token, data) {
   const session = getSession(token);
 
   try {
+    // 🚀 อ่านครั้งเดียวใช้ร่วมกันทั้ง 2 การเช็กด้านล่าง (ดูเหตุผลเต็มที่
+    // findRecordByClientRequestId_/hasSameDayDuplicate_ ด้านบน)
+    const rows = readActiveRecordRows_();
+
     if (data.clientRequestId) {
-      const existing = findRecordByClientRequestId_(data.clientRequestId);
+      const existing = findRecordByClientRequestId_(rows, data.clientRequestId);
       if (existing) {
         logAudit(data.teacherName, "CREATE_RECORD", data.studentId, "SUCCESS (duplicate submit — already recorded)");
         return { status: "success", message: "บันทึกสำเร็จ", id: existing.id, pdfUrl: existing.pdfUrl };
@@ -60,7 +69,7 @@ function processRecordTransaction(token, data) {
     // ข้อมูลจริงที่เดียวของทั้งระบบแล้ว ไม่ต้อง hardcode รายชื่อซ้ำที่นี่อีก)
     const offenseEntry = findOffenseEntry_(data.offense);
     if (offenseEntry && offenseEntry.noRepeatSameDay &&
-        hasSameDayDuplicate_(data.studentId, data.offense, data.date)) {
+        hasSameDayDuplicate_(rows, data.studentId, data.offense, data.date)) {
       logAudit(data.teacherName, "CREATE_RECORD", data.studentId, "BLOCKED_DUPLICATE_SAME_DAY: " + data.offense);
       return {
         status: "error",
