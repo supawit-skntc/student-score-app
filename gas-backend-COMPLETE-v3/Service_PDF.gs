@@ -38,27 +38,22 @@ function generatePDF(data, refId) {
     slide.replaceAllText("{{L1}}", isVocCert);
     slide.replaceAllText("{{L2}}", isDip);
 
-    // 4. ✅ จัดการเครื่องหมายถูก ฐานความผิดทั้ง 14 ข้อ
+    // 4. ✅ จัดการเครื่องหมายถูก ฐานความผิดทั้ง 14 ข้อ — เทียบกับ OFFENSES
+    // (Config.gs) แทนการ hardcode if/else เทียบข้อความทีละเงื่อนไขแบบเดิม ซึ่ง
+    // เคยเป็นสำเนาที่สองของ src/data/offenses.js เสี่ยงติ๊กผิดช่อง/ไม่ติ๊กเลย
+    // แบบเงียบๆ ถ้าแก้ฐานความผิดที่นึงแล้วลืมแก้อีกที่ — ดู checkboxIndex ในนั้น
     let c = Array(14).fill(' '); // สร้างอาเรย์ช่องว่าง 14 ช่อง
     let otherText = '';
     let rawOffense = data.offense || '';
 
-    if (rawOffense === 'แต่งกายผิดระเบียบ') c[0] = '✔';
-    else if (rawOffense === 'ทรงผมผิดระเบียบ/ทำสีผม') c[1] = '✔';
-    else if (rawOffense === 'ทะเลาะวิวาท') c[2] = '✔';
-    else if (rawOffense === 'เล่นการพนัน') c[3] = '✔';
-    else if (rawOffense === 'ลักขโมย') c[4] = '✔';
-    else if (rawOffense === 'ทำลายทรัพย์สินของวิทยาลัยฯ') c[5] = '✔';
-    else if (rawOffense === 'หนีเรียน') c[6] = '✔';
-    else if (rawOffense === 'ชู้สาว') c[7] = '✔';
-    else if (rawOffense === 'สูบบุหรี่') c[8] = '✔';
-    else if (rawOffense === 'พกพาอาวุธ') c[9] = '✔';
-    else if (rawOffense === 'ดื่มสุราหรือของมึนเมา') c[10] = '✔';
-    else if (rawOffense === 'ดูหมิ่น ก้าวร้าว ครู และบุคคลอื่น') c[11] = '✔';
-    else if (rawOffense === 'บุหรี่ไฟฟ้า/กัญชา/กระท่อม/เสพยาเสพติดประเภท ๑ - ๕') c[12] = '✔';
-    else if (rawOffense.startsWith('อื่นๆ')) {
-        c[13] = '✔';
-        otherText = rawOffense.replace('อื่นๆ:', '').trim(); // ดึงข้อความหลังคำว่า อื่นๆ: มา
+    const isOther = rawOffense.startsWith('อื่นๆ');
+    const offenseEntry = findOffenseEntry_(isOther ? 'อื่นๆ' : rawOffense);
+
+    if (offenseEntry) {
+        c[offenseEntry.checkboxIndex] = '✔';
+        if (isOther) {
+            otherText = rawOffense.replace('อื่นๆ:', '').trim(); // ดึงข้อความหลังคำว่า อื่นๆ: มา
+        }
     }
 
     // แทนที่ {{c1}} ถึง {{c14}} ด้วยเครื่องหมายถูกหรือช่องว่าง

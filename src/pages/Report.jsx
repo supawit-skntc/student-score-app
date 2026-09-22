@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, Search, SlidersHorizontal, FileText, Edit, Inbox, UserRound, Trash2, Download } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
-import { OFFENSES, findOffense } from '../data/offenses';
+import { CACHED_OFFENSES, fetchOffenses, findOffense } from '../data/offenses';
 import { isAdmin, canViewAllRecords } from '../utils/permissions';
 import { academicYearOf, currentAcademicYear } from '../data/academicYear';
 import { downloadCsv } from '../utils/csv';
@@ -13,9 +13,6 @@ function parsePoints(points) {
   const n = parseInt(String(points).replace('-', ''), 10);
   return Number.isFinite(n) ? n : 0;
 }
-
-// รายการฐานความผิด (ใช้ชุดเดียวกับหน้าบันทึกตัดคะแนน — src/data/offenses.js)
-const OFFENSE_OPTIONS = OFFENSES.map((o) => o.label);
 
 // text-[16px] (ไม่ใช่ 13px) เพราะเป็นฟอนต์ของ <select>/<input type="date"> จริง
 // — ต่ำกว่า 16px iOS Safari จะซูมจอเข้าอัตโนมัติทุกครั้งที่แตะโฟกัสบนมือถือ
@@ -51,8 +48,22 @@ export default function Report({ onViewStudent }) {
   // State สำหรับเก็บข้อมูลในหน้าต่างแก้ไข
   const [editingRecord, setEditingRecord] = useState(null);
 
+  // รายการฐานความผิด — เซิร์ฟเวอร์เป็นเจ้าของข้อมูลจริงที่เดียวแล้ว (ดู
+  // src/data/offenses.js) เริ่มด้วยค่าที่แคชไว้จากรอบก่อน กันหน้าแก้ไขว่างช่วง
+  // รอ fetch — EditRecordModal รับต่อผ่าน prop ด้านล่าง
+  //
+  // ⚠️ offensesReady ต้องรอ fetchOffenses() เสร็จก่อนเสมอ ก่อนอนุญาตให้เปิดหน้าต่าง
+  // แก้ไข (ดู openEditModal ด้านล่าง) — ถ้าเปิดตอน offenses ยังว่างอยู่ (เช่น
+  // เบราว์เซอร์ใหม่ที่ยังไม่มีแคชใน localStorage และ fetch ยังไม่เสร็จ)
+  // offenseOptions จะว่างไปด้วย ทำให้ทุกรายการถูกเข้าใจผิดว่าเป็น "อื่นๆ" ทั้งหมด
+  // ถ้าครูกดบันทึกโดยไม่สังเกต จะเขียนทับฐานความผิดจริงในชีตด้วยข้อความผิดถาวร
+  const [offenses, setOffenses] = useState(CACHED_OFFENSES);
+  const [offensesReady, setOffensesReady] = useState(CACHED_OFFENSES.length > 0);
+  const offenseOptions = offenses.map((o) => o.label);
+
   useEffect(() => {
     fetchData();
+    fetchOffenses().then((data) => { setOffenses(data); setOffensesReady(true); });
     const stored = localStorage.getItem('currentUser');
     if (stored) setCurrentUser(JSON.parse(stored));
   }, []);
@@ -77,13 +88,20 @@ export default function Report({ onViewStudent }) {
 
   // เปิดหน้าต่างแก้ไข พร้อมแยกส่วนฐานความผิด
   const openEditModal = (record) => {
+    // กันไว้อีกชั้น (นอกจากปุ่ม "แก้ไข" ที่ disabled ไว้แล้วระหว่างรอ) เผื่อถูกเรียก
+    // ก่อน offenses โหลดเสร็จไม่ว่าด้วยเหตุผลใด — ดีกว่าเดาผิดแล้วบันทึกทับข้อมูลจริง
+    if (!offensesReady) {
+      Swal.fire('กรุณารอสักครู่', 'กำลังโหลดรายการฐานความผิด ลองใหม่อีกครั้ง', 'info');
+      return;
+    }
+
     let mainOffense = record.offense;
     let otherOffense = "";
 
     if (record.offense && record.offense.startsWith("อื่นๆ:")) {
       mainOffense = "อื่นๆ";
       otherOffense = record.offense.replace("อื่นๆ: ", "").trim();
-    } else if (!OFFENSE_OPTIONS.includes(record.offense)) {
+    } else if (!offenseOptions.includes(record.offense)) {
       mainOffense = "อื่นๆ";
       otherOffense = record.offense;
     }
@@ -102,7 +120,7 @@ export default function Report({ onViewStudent }) {
     if (name === "mainOffense") {
       // เปลี่ยนฐานความผิดแล้วเติมคะแนนให้อัตโนมัติตามระเบียบข้อ 11 เช่นเดียวกับ
       // ฟอร์มบันทึก (ยังแก้ไขเองได้เผื่อกรณีที่ระเบียบเปิดช่องให้ใช้ดุลยพินิจ)
-      const entry = findOffense(value);
+      const entry = findOffense(offenses, value);
       setEditingRecord({
         ...editingRecord,
         mainOffense: value,
@@ -441,8 +459,9 @@ export default function Report({ onViewStudent }) {
                           )}
                           <button
                             onClick={() => openEditModal(record)}
-                            className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-[10px] text-gold-700 bg-gold-50 hover:bg-gold-100 transition-colors"
-                            title="แก้ไขข้อมูล"
+                            disabled={!offensesReady}
+                            className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-[10px] text-gold-700 bg-gold-50 hover:bg-gold-100 transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                            title={offensesReady ? "แก้ไขข้อมูล" : "กำลังโหลดรายการฐานความผิด..."}
                           >
                             <Edit size={17} />
                           </button>
@@ -520,7 +539,8 @@ export default function Report({ onViewStudent }) {
                     )}
                     <button
                       onClick={() => openEditModal(record)}
-                      className="min-h-11 px-3 rounded-xl border border-line text-gold-700 bg-gold-50 text-xs font-semibold"
+                      disabled={!offensesReady}
+                      className="min-h-11 px-3 rounded-xl border border-line text-gold-700 bg-gold-50 text-xs font-semibold disabled:opacity-40 disabled:pointer-events-none"
                     >
                       แก้ไข
                     </button>
@@ -555,6 +575,7 @@ export default function Report({ onViewStudent }) {
       {editingRecord && (
         <EditRecordModal
           record={editingRecord}
+          offenses={offenses}
           onChange={handleEditChange}
           onSubmit={handleSaveEdit}
           onClose={() => setEditingRecord(null)}

@@ -1,40 +1,45 @@
-// รายการฐานความผิด + คะแนนตัดเริ่มต้น
-// อ้างอิงจากระเบียบวิทยาลัยเทคนิคสมุทรสาครว่าด้วยหลักเกณฑ์การพิจารณาลงโทษนักเรียน
-// นักศึกษา พ.ศ. 2566 ข้อ 11 — ใช้ไฟล์นี้ที่เดียวทั้ง DeductionForm และ Report
-// เพื่อไม่ให้รายการเพี้ยนกันระหว่างหน้า
-//
-// "อื่นๆ" ไม่มีคะแนนตายตัวตามระเบียบ (ให้ใช้ดุลยพินิจ) จึงยังคงให้กรอกเองเหมือนเดิม
-// ฐานความผิดที่ห้ามตัดซ้ำในวันเดียวกัน (noRepeatSameDay) — ให้โอกาสนักเรียนไป
-// แก้ไขก่อน (เช่น แต่งกาย/ทรงผม) ต่างจากความผิดอื่นที่ทำซ้ำได้จริงในวันเดียว
-// (เช่น สูบบุหรี่หลายมวน/หลายครั้ง) จึงยังตัดซ้ำได้ตามปกติ — บังคับจริงที่ฝั่ง
-// เซิร์ฟเวอร์ใน gas-backend-COMPLETE-v3/Service_Records.gs (ต้องแก้คู่กันเสมอ
-// ถ้าจะเพิ่ม/ลดรายการนี้ ไม่งั้นฝั่งเว็บกับเซิร์ฟเวอร์จะไม่ตรงกัน)
-export const OFFENSES = [
-  {
-    label: "แต่งกายผิดระเบียบ", points: 5, ref: "ข้อ 11.1(1)", noRepeatSameDay: true,
-    note: "ฐานความผิดนี้ตัดซ้ำในวันเดียวกันไม่ได้ — ให้โอกาสนักเรียนไปแก้ไขก่อน",
-  },
-  {
-    label: "ทรงผมผิดระเบียบ/ทำสีผม", points: 5, ref: "ข้อ 11.1(1)", noRepeatSameDay: true,
-    note: "ฐานความผิดนี้ตัดซ้ำในวันเดียวกันไม่ได้ — ให้โอกาสนักเรียนไปแก้ไขก่อน",
-  },
-  { label: "หนีเรียน", points: 10, ref: "ข้อ 11.2(3)" },
-  { label: "สูบบุหรี่", points: 10, ref: "ข้อ 11.2(4)" },
-  { label: "ชู้สาว", points: 15, ref: "ข้อ 11.3(2)" },
-  { label: "ดูหมิ่น ก้าวร้าว ครู และบุคคลอื่น", points: 15, ref: "ข้อ 11.3(3)" },
-  { label: "ทะเลาะวิวาท", points: 20, ref: "ข้อ 11.4(6)" },
-  { label: "ลักขโมย", points: 20, ref: "ข้อ 11.4(11)" },
-  { label: "ทำลายทรัพย์สินของวิทยาลัยฯ", points: 20, ref: "ข้อ 11.4(12)" },
-  { label: "เล่นการพนัน", points: 20, ref: "ข้อ 11.4(5)" },
-  { label: "ดื่มสุราหรือของมึนเมา", points: 20, ref: "ข้อ 11.4(2)" },
-  { label: "บุหรี่ไฟฟ้า/กัญชา/กระท่อม/เสพยาเสพติดประเภท ๑ - ๕", points: 20, ref: "ข้อ 11.4(1)" },
-  {
-    label: "พกพาอาวุธ", points: 20, ref: "ข้อ 11.4(7)",
-    note: "หากเป็นอาวุธปืนหรือวัตถุระเบิด ต้องส่งคณะกรรมการปกครองพิจารณาแทน (ข้อ 11.5)",
-  },
-  { label: "อื่นๆ", points: null, ref: null },
-];
+// รายการฐานความผิด + คะแนนตัดเริ่มต้น — เดิมไฟล์นี้ hardcode ข้อมูลชุดนี้เอง ซ้ำ
+// กับ checkbox mapping ใน gas-backend-COMPLETE-v3/Service_PDF.gs (และ
+// NO_REPEAT_SAME_DAY_OFFENSES ใน Service_Records.gs) เสี่ยงแก้ที่เดียวแล้วอีกที่
+// ไม่ตรงกันแบบเงียบๆ (เช่น PDF ติ๊กผิดช่องโดยไม่มี error เตือน) ตอนนี้เซิร์ฟเวอร์
+// เป็นเจ้าของข้อมูลจริงที่เดียว (ดู OFFENSES ใน Config.gs) ไฟล์นี้แค่ดึงมาผ่าน
+// action "getOffenses" + แคชไว้ใน localStorage กันจอว่างตอนเปิดแอปครั้งถัดไป
+// ก่อน fetch จะเสร็จ (แพตเทิร์นเดียวกับ currentUser)
+import { callAPI } from '../services/api';
 
-export function findOffense(label) {
-  return OFFENSES.find((o) => o.label === label);
+const OFFENSES_CACHE_KEY = 'offensesCache';
+
+function readCachedOffenses() {
+  try {
+    const raw = localStorage.getItem(OFFENSES_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+// ค่าเริ่มต้นตอน import โมดูลนี้ — ใช้เป็น initial state ของ useState ใน
+// คอมโพเนนต์ที่ต้องใช้รายการนี้ (DeductionForm/Report/EditRecordModal) ระหว่าง
+// รอ fetchOffenses() ด้านล่างทำงานเสร็จ
+export const CACHED_OFFENSES = readCachedOffenses();
+
+// เรียกใน useEffect ของทุกหน้าที่ต้องใช้รายการนี้ — ปลอดภัยที่จะเรียกซ้ำได้เสมอ
+// (แค่อ่านอย่างเดียว ไม่เขียนข้อมูล) ผลลัพธ์แคช 15 วิฝั่งเว็บอยู่แล้วผ่าน api.js
+export async function fetchOffenses() {
+  const result = await callAPI('getOffenses', {});
+  if (result.status === 'success' && Array.isArray(result.data)) {
+    try {
+      localStorage.setItem(OFFENSES_CACHE_KEY, JSON.stringify(result.data));
+    } catch {
+      // เขียน localStorage ไม่ได้ (โหมดส่วนตัว/พื้นที่เต็ม) ไม่ควรทำให้ฟังก์ชัน
+      // หลักพังตาม — ปล่อยผ่าน ใช้ผลลัพธ์สดที่ได้มาตามปกติ ไม่ได้แคชไว้เฉยๆ
+    }
+    return result.data;
+  }
+  return CACHED_OFFENSES;
+}
+
+export function findOffense(offenses, label) {
+  return offenses.find((o) => o.label === label);
 }

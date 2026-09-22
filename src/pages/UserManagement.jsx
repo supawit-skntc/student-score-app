@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Loader2, UserPlus, Pencil, Trash2, X, Save, KeyRound, ShieldCheck, Eye } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
-import { ADMIN_ROLES, FULL_VISIBILITY_ROLES, ALL_ROLES } from '../utils/permissions';
+import { ALL_ROLES } from '../utils/permissions';
 
 const emptyForm = { username: '', fullName: '', role: 'ครูผู้สอน', password: '', email: '' };
 
@@ -12,6 +12,11 @@ const labelCls = "mb-1.5 block text-sm font-semibold text-slate-700";
 export default function UserManagement() {
   const [users, setUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  // role -> 'admin' | 'full' จากเซิร์ฟเวอร์ (ดู getRoleTiers ใน Service_Users.gs)
+  // — หน้านี้เป็นที่เดียวที่ต้องจัดหมวด role ของ "คนอื่น"/role ที่ยังไม่ถูกเลือก
+  // จริง (badge ในตาราง + คำอธิบายตอนเลือก role ในฟอร์ม) เลยต้องขอ map เต็มมา
+  // แทนที่จะเช็กแค่ roleTier ของตัวเองแบบหน้าอื่น (ดู src/utils/permissions.js)
+  const [roleTiers, setRoleTiers] = useState({});
 
   const [modalMode, setModalMode] = useState(null); // null | 'create' | 'edit'
   const [form, setForm] = useState(emptyForm);
@@ -20,6 +25,9 @@ export default function UserManagement() {
 
   useEffect(() => {
     fetchUsers();
+    callAPI('getRoleTiers', {}).then((result) => {
+      if (result.status === 'success') setRoleTiers(result.data || {});
+    });
   }, []);
 
   const fetchUsers = async () => {
@@ -145,8 +153,8 @@ export default function UserManagement() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {users.length > 0 ? users.map((u) => {
-                const admin = ADMIN_ROLES.includes(u.role);
-                const seesAll = FULL_VISIBILITY_ROLES.includes(u.role);
+                const admin = roleTiers[u.role] === 'admin';
+                const seesAll = roleTiers[u.role] === 'full';
                 return (
                   <tr key={u.username} className="hover:bg-brand-50/40 transition-colors bg-white">
                     <td className="p-4 text-sm text-slate-800 font-medium">{u.fullName}</td>
@@ -234,9 +242,9 @@ export default function UserManagement() {
                   {ALL_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                 </select>
                 <p className="mt-1.5 text-xs text-slate-400">
-                  {ADMIN_ROLES.includes(form.role)
+                  {roleTiers[form.role] === 'admin'
                     ? 'บทบาทนี้เข้าถึงหน้า "จัดการผู้ใช้งาน" และฟังก์ชันของผู้ดูแลระบบได้ทั้งหมด (รวมถึงเห็นทุกรายการในหน้ารายงาน)'
-                    : FULL_VISIBILITY_ROLES.includes(form.role)
+                    : roleTiers[form.role] === 'full'
                     ? 'บทบาทนี้เห็นรายการของทุกคนได้ในหน้ารายงาน (ไม่ใช่แค่ของตัวเอง) แต่ไม่มีสิทธิ์จัดการผู้ใช้งานหรือลบรายการ'
                     : 'บทบาทนี้เห็นเฉพาะรายการที่ตัวเองบันทึกในหน้ารายงาน ใช้งานได้ที่แผงควบคุม บันทึกตัดคะแนน และรายงาน'}
                 </p>

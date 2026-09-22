@@ -39,10 +39,14 @@ function handleLogin(username, password) {
 
     const inputHash = hashPassword(String(password).trim(), rowSalt || undefined);
     if (rowPassHash === inputHash) {
+      const role = String(data[i][3]).trim();
       const user = {
         username: rowUser,
         name: String(data[i][2]).trim(),
-        role: String(data[i][3]).trim()
+        role: role,
+        // 🏷️ ดู roleTierOf_ ใน Utils.gs — เว็บใช้ค่านี้เช็กสิทธิ์แทนการเก็บรายชื่อ
+        // role เองซ้ำ (src/utils/permissions.js)
+        roleTier: roleTierOf_(role),
       };
 
       // 🔑 ออก session token ให้ frontend เก็บไว้แนบกับทุก request ถัดไป

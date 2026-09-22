@@ -1,6 +1,6 @@
 import React from 'react';
 import { Loader2, X, Save } from 'lucide-react';
-import { OFFENSES, findOffense } from '../data/offenses';
+import { findOffense } from '../data/offenses';
 
 // ฟอนต์ input ต้อง >= 16px เสมอ — ต่ำกว่านี้ iOS Safari จะซูมจอเข้าอัตโนมัติทุก
 // ครั้งที่แตะโฟกัสช่องกรอก (มือถือ) ทำให้รู้สึกว่า UI ไม่พอดีกับจอ
@@ -9,8 +9,10 @@ const labelCls = "block text-[13px] font-semibold text-ink-soft mb-1.5";
 
 // หน้าต่างแก้ไขบันทึกการตัดคะแนน — แยกออกมาจาก Report.jsx เพราะเดิมไฟล์เดียว
 // ยาวเกินไป (ฟอร์มแก้ไขนี้เป็นก้อน JSX ที่ใหญ่ที่สุดในหน้านั้น) ตรรกะ/state ยังอยู่
-// ที่ Report.jsx เหมือนเดิม ที่นี่รับแค่ record + handler ผ่าน props
-export default function EditRecordModal({ record, onChange, onSubmit, onClose, isSaving }) {
+// ที่ Report.jsx เหมือนเดิม ที่นี่รับแค่ record + handler ผ่าน props — รวมถึง
+// offenses ที่ Report.jsx โหลดมาจากเซิร์ฟเวอร์แล้ว (ดู src/data/offenses.js)
+// ไม่ต้องโหลดซ้ำเองอีกรอบ
+export default function EditRecordModal({ record, offenses, onChange, onSubmit, onClose, isSaving }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-ink/40 backdrop-blur-sm">
       <div className="bg-white rounded-t-[24px] sm:rounded-[22px] shadow-modal w-full max-w-[420px] max-h-[90vh] overflow-y-auto">
@@ -89,14 +91,14 @@ export default function EditRecordModal({ record, onChange, onSubmit, onClose, i
                 className={`${inputCls} bg-white`}
               >
                 <option value="">-- เลือกความผิด --</option>
-                {OFFENSES.map((o) => (
+                {offenses.map((o) => (
                   <option key={o.label} value={o.label}>
                     {o.label}{o.points != null ? ` (ตัด ${o.points} คะแนน)` : ''}
                   </option>
                 ))}
               </select>
-              {findOffense(record.mainOffense)?.note && (
-                <p className="mt-1.5 rounded-[13px] bg-gold-50 px-3.5 py-2.5 text-xs text-gold-700">⚠ {findOffense(record.mainOffense).note}</p>
+              {findOffense(offenses, record.mainOffense)?.note && (
+                <p className="mt-1.5 rounded-[13px] bg-gold-50 px-3.5 py-2.5 text-xs text-gold-700">⚠ {findOffense(offenses, record.mainOffense).note}</p>
               )}
             </div>
 
@@ -119,8 +121,8 @@ export default function EditRecordModal({ record, onChange, onSubmit, onClose, i
               <label className={labelCls}>หัก (คะแนน)</label>
               <input type="number" name="points" required value={record.points.replace('-', '')} onChange={onChange}
                 className="min-h-12 w-full rounded-[13px] border-[1.5px] border-[#F0CDD4] bg-[#FFF7F8] px-3.5 py-3 text-[17px] font-bold text-bad-fg outline-none transition focus:border-bad-fg" />
-              {findOffense(record.mainOffense)?.ref && (
-                <p className="mt-1.5 text-[11.5px] text-ink-faint">ค่าเริ่มต้นตาม{findOffense(record.mainOffense).ref} — แก้ไขได้หากมีเหตุอันควร</p>
+              {findOffense(offenses, record.mainOffense)?.ref && (
+                <p className="mt-1.5 text-[11.5px] text-ink-faint">ค่าเริ่มต้นตาม{findOffense(offenses, record.mainOffense).ref} — แก้ไขได้หากมีเหตุอันควร</p>
               )}
             </div>
           </div>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Camera, Save, Loader2, UserRound, FileWarning } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
-import { OFFENSES, findOffense } from '../data/offenses';
+import { CACHED_OFFENSES, fetchOffenses, findOffense } from '../data/offenses';
 import { resizeImageForOcr, parseOcrCardData, MAJORS_BY_LEVEL } from '../utils/ocr';
 import { todayLocalISO } from '../utils/date';
 
@@ -32,6 +32,9 @@ export default function DeductionForm() {
   const [isScanning, setIsScanning] = useState(false);
   const [ocrProgress, setOcrProgress] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // รายการฐานความผิด — เซิร์ฟเวอร์เป็นเจ้าของข้อมูลจริงที่เดียวแล้ว (ดู
+  // src/data/offenses.js) เริ่มด้วยค่าที่แคชไว้จากรอบก่อน กันฟอร์มว่างช่วงรอ fetch
+  const [offenses, setOffenses] = useState(CACHED_OFFENSES);
 
   useEffect(() => {
     const storedUser = localStorage.getItem('currentUser');
@@ -40,6 +43,7 @@ export default function DeductionForm() {
       // นำชื่อ user.name มายัดใส่ใน teacherName
       setFormData(prev => ({ ...prev, teacherName: user.name }));
     }
+    fetchOffenses().then(setOffenses);
   }, []);
 
   const handleChange = (e) => {
@@ -65,7 +69,7 @@ export default function DeductionForm() {
   // เผื่อกรณีที่ระเบียบเปิดช่องให้ใช้ดุลยพินิจ) — "อื่นๆ" ไม่มีคะแนนตายตัวจึงเคลียร์
   // ให้กรอกเอง
   const handleOffenseChange = (value) => {
-    const entry = findOffense(value);
+    const entry = findOffense(offenses, value);
     setFormData(prev => ({
       ...prev,
       offense: value,
@@ -73,7 +77,7 @@ export default function DeductionForm() {
     }));
   };
 
-  const selectedOffense = findOffense(formData.offense);
+  const selectedOffense = findOffense(offenses, formData.offense);
 
   // --- ย้อนกลับมาใช้ AI Logic เวอร์ชันที่เสถียรที่สุด (อวนลากปลา + มีดสับหมู) ---
   const handleImageUpload = async (e) => {
@@ -331,7 +335,7 @@ export default function DeductionForm() {
             <div>
               <label className={labelCls}>ฐานความผิด</label>
               <div className="flex flex-wrap gap-2">
-                {OFFENSES.map((o) => {
+                {offenses.map((o) => {
                   const active = formData.offense === o.label;
                   return (
                     <button

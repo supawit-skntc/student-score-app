@@ -3,14 +3,6 @@
 // ฟังก์ชันที่เกี่ยวกับ RPA Bot (คิวงาน, สถิติ) แยกไปอยู่ Service_RpaBot.gs แล้ว
 // ==========================================
 
-// ฐานความผิดที่ห้ามตัดซ้ำในวันเดียวกัน — ให้โอกาสนักเรียนไปแก้ไขก่อน (เช่น
-// แต่งกาย/ทรงผม) ส่วนความผิดอื่นที่เหลือ (สูบบุหรี่, ทะเลาะวิวาท, อื่นๆ ฯลฯ)
-// ยังตัดซ้ำในวันเดียวกันได้ตามปกติเพราะทำผิดซ้ำได้จริง
-// ⚠️ ต้องตรงกับ src/data/offenses.js ฝั่งเว็บเสมอ (ฟิลด์ noRepeatSameDay) —
-// แก้ที่นี่แล้วต้องไปแก้ที่นั่นด้วย ไม่งั้นข้อความเตือนหน้าเว็บกับพฤติกรรมจริง
-// จะไม่ตรงกัน
-const NO_REPEAT_SAME_DAY_OFFENSES = ["แต่งกายผิดระเบียบ", "ทรงผมผิดระเบียบ/ทำสีผม"];
-
 // แปลงค่าวันที่จากเซลล์ชีต (อาจเป็น Date object หรือ string ก็ได้) ให้เป็น
 // "YYYY-MM-DD" เพื่อเทียบกับ data.date ที่ส่งมาจากฟอร์ม (input type="date")
 function toIsoDateString_(rawDate) {
@@ -63,7 +55,11 @@ function processRecordTransaction(token, data) {
       }
     }
 
-    if (NO_REPEAT_SAME_DAY_OFFENSES.indexOf(data.offense) !== -1 &&
+    // ฐานความผิดที่ห้ามตัดซ้ำในวันเดียวกัน — ให้โอกาสนักเรียนไปแก้ไขก่อน (เช่น
+    // แต่งกาย/ทรงผม) เช็กจาก noRepeatSameDay ใน OFFENSES (Config.gs — เจ้าของ
+    // ข้อมูลจริงที่เดียวของทั้งระบบแล้ว ไม่ต้อง hardcode รายชื่อซ้ำที่นี่อีก)
+    const offenseEntry = findOffenseEntry_(data.offense);
+    if (offenseEntry && offenseEntry.noRepeatSameDay &&
         hasSameDayDuplicate_(data.studentId, data.offense, data.date)) {
       logAudit(data.teacherName, "CREATE_RECORD", data.studentId, "BLOCKED_DUPLICATE_SAME_DAY: " + data.offense);
       return {

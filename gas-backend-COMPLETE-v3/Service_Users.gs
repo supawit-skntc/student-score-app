@@ -24,6 +24,20 @@ function getUsersList(token) {
   return { status: "success", data: users };
 }
 
+// ==========================================
+// ส่ง role→tier ('admin' | 'full') ทั้งก้อนให้หน้า "จัดการผู้ใช้งาน" ใช้จัดหมวด
+// บัญชีคนอื่น (เช่น badge ในตาราง, คำอธิบายตอนเลือก role ในฟอร์ม) — ต่างจาก
+// roleTier ที่แนบมากับ user ตอน login (เฉพาะของตัวเอง) เพราะหน้านี้ต้องจัดหมวด
+// role ของ "คนอื่น"/role ที่ยังไม่ถูกเลือกจริงด้วย ดู roleTierOf_/
+// buildRoleTierMap_ ใน Utils.gs — เจ้าของข้อมูลจริงที่เดียว ไม่ต้องเก็บรายชื่อ
+// ADMIN_ROLES/FULL_VISIBILITY_ROLES ซ้ำฝั่งเว็บอีกต่อไป (เดิมอยู่ที่
+// src/utils/permissions.js)
+// ==========================================
+function getRoleTiers(token) {
+  requireAdmin(token);
+  return { status: "success", data: buildRoleTierMap_() };
+}
+
 function createUser(token, newUserData) {
   requireAdmin(token);
 

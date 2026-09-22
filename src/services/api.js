@@ -1,7 +1,7 @@
 // src/services/api.js
 
 // URL ของ Google Apps Script (Web App) จากระบบเดิมของคุณ
-const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxKgnk9MTqy9tzOT3PsQURtb6QHkQQUdM3migTj6miJPjFIBhtwh-v2dFH6PNk8mqHJ/exec";
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzRnmmdHJdbGL230s-B56HSKds-aAigiEgP6u4ahLRQw0QROw1PZzuXV-K8O96DmFco/exec";
 
 // Google เด้งหน้า HTML กลับมาแทน JSON เป็นครั้งคราวโดยไม่มีสาเหตุจากโค้ดเราเลย
 // (เจอมาแล้วหลายครั้ง ทั้งฝั่งเว็บนี้และฝั่งบอท RPA) ลองใหม่อัตโนมัติสั้นๆ ก่อนจะ
@@ -28,6 +28,7 @@ const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxKgnk9MTqy9tzOT3Ps
 // บันทึกข้อมูล) ขึ้นมาเป็น error 404 ให้ครูเห็นทันทีโดยไม่มีการลองใหม่อัตโนมัติเลย
 const RETRYABLE_ACTIONS = new Set([
   'login', 'logout', 'getRecords', 'getMyRecords', 'getUsers', 'getAuditLogs', 'getRpaStats',
+  'getOffenses', 'getRoleTiers',
   'addRecord', 'generateRecordPdf', 'ocrScan',
 ]);
 const MAX_ATTEMPTS = 3;
@@ -54,10 +55,25 @@ function getStoredToken() {
 // อายุแคชสั้นกว่าฝั่งเซิร์ฟเวอร์ (15 วิ < 30 วิ) เพื่อให้เห็นข้อมูลใหม่ไม่ช้ากว่าเดิม
 // มาก และล้างแคชทั้งหมดทันทีเมื่อมี action เขียนข้อมูลสำเร็จ (ปลอดภัยไว้ก่อน ไม่
 // ต้องคิดว่า action ไหนกระทบ cache key ไหนบ้าง)
-const READ_CACHEABLE_ACTIONS = new Set(['getRecords', 'getMyRecords', 'getUsers', 'getAuditLogs', 'getRpaStats']);
+const READ_CACHEABLE_ACTIONS = new Set(['getRecords', 'getMyRecords', 'getUsers', 'getAuditLogs', 'getRpaStats', 'getOffenses', 'getRoleTiers']);
 const WRITE_ACTIONS = new Set(['addRecord', 'updateRecord', 'deleteRecord', 'createUser', 'updateUser', 'deleteUser', 'generateRecordPdf']);
 const READ_CACHE_TTL_MS = 15000;
+
+// 'getOffenses'/'getRoleTiers' แทบไม่เปลี่ยนเลย (ผูกกับระเบียบวิทยาลัย/เทมเพลต
+// PDF ที่แก้กันปีละไม่กี่ครั้ง) ต่างจาก getRecords/getMyRecords ที่ต้องสดใหม่เสมอ
+// — ถ้าใช้ TTL 15 วิเท่ากัน ครูที่กรอกฟอร์มนานกว่า 15 วิ (เรื่องปกติ) แล้วสลับไป
+// หน้ารายงานจะเจอแคชหมดอายุ ต้องเสีย ~2 วิ ไปกับข้อมูลที่ไม่ได้เปลี่ยนเลยจริงๆ
+// (ก่อน refactor นี้ข้อมูลชุดนี้เป็น static import ต้นทุน 0 เสมอ) — ยืดอายุแคช
+// เฉพาะ 2 action นี้ให้ยาวขึ้นแทน กันความช้าที่เพิ่มมาโดยไม่จำเป็น
+const READ_CACHE_TTL_OVERRIDES_MS = {
+  getOffenses: 5 * 60 * 1000,
+  getRoleTiers: 5 * 60 * 1000,
+};
 const readCache = new Map();
+
+function cacheTtlFor(action) {
+  return READ_CACHE_TTL_OVERRIDES_MS[action] || READ_CACHE_TTL_MS;
+}
 
 function readCacheKey(action) {
   // getMyRecords/getUsers ฯลฯ ขึ้นกับสิทธิ์ของผู้ใช้ที่ login อยู่ ต้องรวม token
@@ -77,7 +93,7 @@ export const callAPI = async (action, data = {}) => {
 
   if (result && result.status === 'success') {
     if (READ_CACHEABLE_ACTIONS.has(action)) {
-      readCache.set(readCacheKey(action), { result, expiresAt: Date.now() + READ_CACHE_TTL_MS });
+      readCache.set(readCacheKey(action), { result, expiresAt: Date.now() + cacheTtlFor(action) });
     } else if (WRITE_ACTIONS.has(action) || action === 'login' || action === 'logout') {
       readCache.clear();
     }

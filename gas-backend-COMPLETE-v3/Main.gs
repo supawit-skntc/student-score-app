@@ -38,6 +38,9 @@ function doPost(e) {
       case "getRpaStats":
         response = getRpaStats(token);
         break;
+      case "getOffenses":
+        response = getOffenses(token);
+        break;
 
       // ===== ผู้ดูแลระบบเท่านั้น =====
       case "getUsers":
@@ -57,6 +60,9 @@ function doPost(e) {
         break;
       case "getAuditLogs":
         response = getAuditLogs(token);
+        break;
+      case "getRoleTiers":
+        response = getRoleTiers(token);
         break;
 
       // ===== สำหรับ RPA Bot (Python) — เรียกผ่าน HTTP API นี้แทน Google Sheets

@@ -87,6 +87,31 @@ const ADMIN_ROLES = ['Admin', 'ผู้ดูแลระบบ', 'บุคล
 const FULL_VISIBILITY_ROLES = ['ครูปกครอง', 'ผู้อำนวยการสถานศึกษา', 'รองผู้อำนวยการสถานศึกษา'];
 const SESSION_TTL_SECONDS = 21600;
 
+// ==========================================
+// 🏷️ จัดกลุ่ม role ดิบ (เช่น "ผู้ดูแลระบบ") ให้เป็น tier ง่ายๆ 3 ระดับ
+// ('admin' | 'full' | 'normal') — เดิมฝั่งเว็บ (src/utils/permissions.js) เก็บ
+// รายชื่อ ADMIN_ROLES/FULL_VISIBILITY_ROLES ซ้ำกับด้านบนเป๊ะๆ เอง เสี่ยงแก้ที่นี่
+// แล้วลืมแก้ฝั่งเว็บ (หรือกลับกัน) ทำให้เมนู/สิทธิ์ที่ควรเห็นในหน้าเว็บไม่ตรงกับ
+// สิทธิ์จริงที่ backend บังคับ (บังคับจริงอยู่ที่นี่เสมอ ไม่ว่าเว็บจะแสดงอะไร)
+//
+// ตอนนี้ backend เป็นเจ้าของข้อมูลจริงที่เดียว — ส่ง roleTier แนบไปกับ user
+// object ตอน login (ดู handleLogin ใน Service_Auth.gs) ให้เว็บเช็กแค่ roleTier
+// พอ ไม่ต้องเก็บรายชื่อ role เองอีกต่อไป และ getRoleTiers() (ดู Service_Users.gs)
+// ส่ง map นี้ทั้งก้อนให้หน้า "จัดการผู้ใช้งาน" ใช้จัดหมวดบัญชีอื่นที่ไม่ใช่ตัวเอง
+// ==========================================
+function roleTierOf_(role) {
+  if (ADMIN_ROLES.indexOf(role) !== -1) return 'admin';
+  if (FULL_VISIBILITY_ROLES.indexOf(role) !== -1) return 'full';
+  return 'normal';
+}
+
+function buildRoleTierMap_() {
+  const map = {};
+  ADMIN_ROLES.forEach((r) => { map[r] = 'admin'; });
+  FULL_VISIBILITY_ROLES.forEach((r) => { map[r] = 'full'; });
+  return map;
+}
+
 function createSession(user) {
   const token = Utilities.getUuid();
   const cache = CacheService.getScriptCache();
