@@ -5,6 +5,7 @@ import { callAPI } from '../services/api';
 import { statusForPoints } from '../data/thresholds';
 import { academicYearOf, currentAcademicYear, currentTermLabel } from '../data/academicYear';
 import { isAdmin } from '../utils/permissions';
+import { parsePoints } from '../utils/points';
 import SummaryCard from '../components/ui/SummaryCard';
 import AtRiskStudentsCard from '../components/dashboard/AtRiskStudentsCard';
 import TopOffensesCard from '../components/dashboard/TopOffensesCard';
@@ -13,11 +14,6 @@ import RpaBotCard from '../components/dashboard/RpaBotCard';
 
 function normalizeOffense(offense = '') {
   return offense.startsWith('อื่นๆ') ? 'อื่นๆ' : offense;
-}
-
-function parsePoints(points) {
-  const n = parseInt(String(points).replace('-', ''), 10);
-  return Number.isFinite(n) ? n : 0;
 }
 
 export default function Dashboard({ onViewStudent }) {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Search, SlidersHorizontal, FileText, Edit, Inbox, UserRound, Trash2, Download } from 'lucide-react';
+import { Loader2, Search, SlidersHorizontal, FileText, Edit, Inbox, UserRound, Trash2, Download, ChevronDown } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
 import { CACHED_OFFENSES, fetchOffenses, findOffense } from '../data/offenses';
@@ -7,12 +7,8 @@ import { isAdmin, canViewAllRecords } from '../utils/permissions';
 import { academicYearOf, currentAcademicYear } from '../data/academicYear';
 import { downloadCsv } from '../utils/csv';
 import { todayLocalISO } from '../utils/date';
+import { parsePoints } from '../utils/points';
 import EditRecordModal from '../components/EditRecordModal';
-
-function parsePoints(points) {
-  const n = parseInt(String(points).replace('-', ''), 10);
-  return Number.isFinite(n) ? n : 0;
-}
 
 // text-[16px] (ไม่ใช่ 13px) เพราะเป็นฟอนต์ของ <select>/<input type="date"> จริง
 // — ต่ำกว่า 16px iOS Safari จะซูมจอเข้าอัตโนมัติทุกครั้งที่แตะโฟกัสบนมือถือ
@@ -44,6 +40,7 @@ export default function Report({ onViewStudent }) {
   const [filterTo, setFilterTo] = useState("");
   const [filterHighRisk, setFilterHighRisk] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
   // State สำหรับเก็บข้อมูลในหน้าต่างแก้ไข
   const [editingRecord, setEditingRecord] = useState(null);
@@ -62,18 +59,30 @@ export default function Report({ onViewStudent }) {
   const offenseOptions = offenses.map((o) => o.label);
 
   useEffect(() => {
-    fetchData();
-    fetchOffenses().then((data) => { setOffenses(data); setOffensesReady(true); });
+    // อ่าน currentUser จาก localStorage แบบ sync ก่อนเสมอ (ไม่รอ setState) แล้ว
+    // ส่งเข้า fetchData() ตรงๆ — กันปัญหา race condition ที่ตอนเรียก fetchData()
+    // ครั้งแรกตอน mount, state currentUser ยังเป็น null อยู่ (setCurrentUser ยัง
+    // ไม่ทันมีผลในรอบ render เดียวกัน) ทำให้เลือก action ผิดเป็นของครูทั่วไปเสมอ
+    // ต่อให้ล็อกอินเป็นแอดมินจริงก็ตาม
     const stored = localStorage.getItem('currentUser');
-    if (stored) setCurrentUser(JSON.parse(stored));
+    const user = stored ? JSON.parse(stored) : null;
+    setCurrentUser(user);
+    fetchData(user);
+    fetchOffenses().then((data) => { setOffenses(data); setOffensesReady(true); });
   }, []);
 
-  const fetchData = async () => {
+  const fetchData = async (user = currentUser) => {
     setIsLoading(true);
     try {
-      // ใช้ getMyRecords แทน getRecords — admin เห็นทุกรายการเหมือนเดิม ส่วนครู
-      // ทั่วไปเห็นเฉพาะรายการที่ตัวเองบันทึก (กรองฝั่งเซิร์ฟเวอร์ ไม่ใช่ฝั่งเว็บ)
-      const result = await callAPI('getMyRecords', {});
+      // แอดมิน/กลุ่มเห็นทุกรายการ ใช้ getRecords ตัวเดียวกับหน้าแดชบอร์ด/ประวัติ
+      // นักเรียน (ข้อมูลเหมือนกันเป๊ะสำหรับกลุ่มนี้) แทน getMyRecords — เดิมหน้านี้
+      // เรียก getMyRecords เสมอไม่ว่า role ไหน ทำให้แคชฝั่งเว็บ (api.js) ไม่ถูกใช้
+      // ร่วมกับ Dashboard/StudentProfile เลยเพราะชื่อ action ไม่ตรงกัน สลับหน้าไป
+      // มาต้องเสีย ~2 วิ ซ้ำอีกรอบทั้งที่เพิ่งได้ข้อมูลชุดเดียวกันมา — ส่วนครูทั่วไป
+      // (เห็นเฉพาะรายการตัวเอง) ยังต้องใช้ getMyRecords เหมือนเดิมเพราะข้อมูลที่ได้
+      // ไม่เหมือนกับ getRecords จริงๆ (คนละ scope กัน ห้ามใช้ร่วมกัน)
+      const action = canViewAllRecords(user) ? 'getRecords' : 'getMyRecords';
+      const result = await callAPI(action, {});
       if (result.status === 'success') {
         setRecords(result.data);
       } else {
@@ -334,26 +343,49 @@ export default function Report({ onViewStudent }) {
             <SlidersHorizontal size={16} />
             ตัวกรอง
           </button>
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            disabled={filteredRecords.length === 0}
-            title="1 แถว = 1 ครั้งที่ถูกบันทึก เหมาะกับดูรายละเอียด/หลักฐานย้อนหลัง"
-            className="inline-flex items-center gap-1.5 min-h-12 px-4 rounded-[14px] border-[1.5px] border-[#E3D9DA] bg-white text-sm font-semibold text-ink-soft transition-colors hover:bg-line-soft disabled:opacity-40 disabled:hover:bg-white"
-          >
-            <Download size={16} />
-            ส่งออกรายละเอียด
-          </button>
-          <button
-            type="button"
-            onClick={handleExportSummaryCsv}
-            disabled={filteredRecords.length === 0}
-            title="1 แถว = 1 นักเรียน (รวมคะแนนที่ถูกหักทุกครั้งเข้าด้วยกัน)"
-            className="inline-flex items-center gap-1.5 min-h-12 px-4 rounded-[14px] border-[1.5px] border-[#E3D9DA] bg-white text-sm font-semibold text-ink-soft transition-colors hover:bg-line-soft disabled:opacity-40 disabled:hover:bg-white"
-          >
-            <Download size={16} />
-            ส่งออกสรุปรายชื่อ
-          </button>
+          {/* --- ส่งออก CSV: ปุ่มเดียว + เมนูเลือก — เดิมแยกเป็น 2 ปุ่มวางเรียง
+              กัน (รายละเอียด/สรุปรายชื่อ) รวมเป็นปุ่มเดียวให้แถวเครื่องมือด้านบน
+              ไม่รกแทน ยังส่งออกได้ทั้ง 2 แบบเหมือนเดิมทุกประการ แค่ต้องกดเปิดเมนู
+              ก่อน 1 ครั้ง --- */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setExportMenuOpen((v) => !v)}
+              disabled={filteredRecords.length === 0}
+              className={`inline-flex items-center gap-1.5 min-h-12 px-4 rounded-[14px] border-[1.5px] text-sm font-semibold transition-colors disabled:opacity-40 disabled:hover:bg-white ${
+                exportMenuOpen ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-[#E3D9DA] bg-white text-ink-soft hover:bg-line-soft'
+              }`}
+            >
+              <Download size={16} />
+              ส่งออก CSV
+              <ChevronDown size={14} className={`transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {exportMenuOpen && (
+              <>
+                {/* พื้นหลังโปร่งใสเต็มจอ — คลิกที่ไหนก็ได้นอกเมนูเพื่อปิด */}
+                <div className="fixed inset-0 z-10" onClick={() => setExportMenuOpen(false)} />
+                <div className="absolute left-0 top-full z-20 mt-2 w-[260px] rounded-[16px] border border-line bg-white p-1.5 shadow-modal">
+                  <button
+                    type="button"
+                    onClick={() => { handleExportCsv(); setExportMenuOpen(false); }}
+                    className="w-full rounded-[12px] px-3 py-2.5 text-left transition-colors hover:bg-line-soft"
+                  >
+                    <p className="text-[13.5px] font-semibold text-ink">ส่งออกรายละเอียด</p>
+                    <p className="mt-0.5 text-[11.5px] text-ink-faint">1 แถว = 1 ครั้งที่ถูกบันทึก — เหมาะกับดูหลักฐานย้อนหลัง</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { handleExportSummaryCsv(); setExportMenuOpen(false); }}
+                    className="w-full rounded-[12px] px-3 py-2.5 text-left transition-colors hover:bg-line-soft"
+                  >
+                    <p className="text-[13.5px] font-semibold text-ink">ส่งออกสรุปรายชื่อ</p>
+                    <p className="mt-0.5 text-[11.5px] text-ink-faint">1 แถว = 1 นักเรียน — รวมคะแนนที่ถูกหักทุกครั้งเข้าด้วยกัน</p>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           <span className="text-sm text-ink-mute font-medium shrink-0">
             พบ <b className="text-ink font-bold">{filteredRecords.length}</b> รายการ
           </span>

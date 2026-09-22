@@ -5,11 +5,7 @@ import { callAPI } from '../services/api';
 import { statusForPoints } from '../data/thresholds';
 import { academicYearOf, currentAcademicYear } from '../data/academicYear';
 import { isAdmin } from '../utils/permissions';
-
-function parsePoints(points) {
-  const n = parseInt(String(points).replace('-', ''), 10);
-  return Number.isFinite(n) ? n : 0;
-}
+import { parsePoints } from '../utils/points';
 
 // จำกัดจำนวนชิปที่แสดงพร้อมกัน — ถ้าโรงเรียนมีนักเรียนโดนตัดคะแนนหลายร้อยคน
 // (ไม่ใช่แค่ไม่กี่คนซ้ำๆ เหมือนข้อมูลตัวอย่างตอนออกแบบ) รายการจะยาวจนรกจอ ต้อง
