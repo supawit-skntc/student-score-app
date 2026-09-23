@@ -245,22 +245,11 @@ function getCachedRecordRowIndex_(id) {
 }
 
 function mapRowToRecord_(row) {
-  const thaiMonths = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
-
+  // formatThaiDate_/toIsoDateString_ (Utils.gs) รองรับทั้ง Date object และ
+  // string อยู่แล้ว คืนค่า "" เองถ้า rawDate ว่าง ไม่ต้องเช็ก if (rawDate) ซ้ำที่นี่
   let rawDate = row[2];
-  let formattedDate = "";
-  let inputDateStr = "";
-
-  if (rawDate) {
-    let d = new Date(rawDate);
-    if (!isNaN(d.getTime())) {
-      formattedDate = `${d.getDate()} ${thaiMonths[d.getMonth()]} ${d.getFullYear() + 543}`;
-      inputDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    } else {
-      formattedDate = String(rawDate);
-      inputDateStr = String(rawDate);
-    }
-  }
+  let formattedDate = formatThaiDate_(rawDate);
+  let inputDateStr = rawDate ? toIsoDateString_(rawDate) : "";
 
   return {
     id: String(row[0] || ""),

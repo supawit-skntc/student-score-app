@@ -1,3 +1,25 @@
+// แปลงวันที่ (Date object จาก Sheets หรือ string ก็ได้) ให้เป็นข้อความไทยอ่านง่าย
+// เช่น "23 ก.ย. 2569" (หรือ "23 กันยายน 2569" ถ้าส่ง {long:true} — เอกสาร PDF
+// ใช้ชื่อเดือนเต็ม ส่วน badge/รายการในเว็บใช้ชื่อย่อ) — ใช้ร่วมกันทุกจุดที่ต้อง
+// แสดงวันที่เป็นภาษาไทย (mapRowToRecord_ ใน Service_Records.gs, getProbationStatus
+// ใน Service_Probation.gs, generatePDF ใน Service_PDF.gs) กันเขียนอาร์เรย์ชื่อ
+// เดือนไทยซ้ำหลายจุด (เคยมีสำเนาแยกอยู่ใน Service_PDF.gs เอง) และกันบั๊กคลาสสิก
+// ของ Sheets: เขียนสตริงที่หน้าตาเหมือนวันที่ลงเซลล์ (เช่น "2026-09-23") แล้ว
+// Sheets แปลงเป็นเซลล์ชนิด Date ให้อัตโนมัติเอง พออ่านกลับมาผ่าน getValues() จะ
+// ได้ JS Date object ไม่ใช่ string เดิม — ถ้าใครเผลอทำ String(dateObject) ตรงๆ
+// จะได้ข้อความยาวเฟะแบบ "Wed Sep 23 2026 00:00:00 GMT+0700 (Indochina Time)"
+// แทนวันที่อ่านง่าย (เจอบั๊กนี้จริงในชีต Probation)
+function formatThaiDate_(rawDate, options) {
+  if (!rawDate) return "";
+  const useLong = !!(options && options.long);
+  const shortMonths = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+  const longMonths = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+  const d = new Date(rawDate);
+  if (isNaN(d.getTime())) return String(rawDate);
+  const months = useLong ? longMonths : shortMonths;
+  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear() + 543}`;
+}
+
 function logAudit(user, action, targetId, status) {
   try {
     const sheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName("Audit_Logs");

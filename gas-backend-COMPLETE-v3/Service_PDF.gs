@@ -1,16 +1,10 @@
 function generatePDF(data, refId) {
     if (!data) return "";
 
-    // 1. 🗓️ แปลงวันที่เป็นภาษาไทย
-    let thaiDate = "ไม่ระบุวันที่";
-    if (data.date) {
-        const dateParts = data.date.split('-'); // แยก 2026-08-03
-        const months = ["", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
-        const year = parseInt(dateParts[0]) + 543;
-        const month = months[parseInt(dateParts[1])];
-        const day = parseInt(dateParts[2]);
-        thaiDate = `${day} ${month} ${year}`;
-    }
+    // 1. 🗓️ แปลงวันที่เป็นภาษาไทย — ใช้ formatThaiDate_ ร่วมกับจุดอื่น (Utils.gs)
+    // แทนอาร์เรย์ชื่อเดือนที่เคยก็อบปี้แยกไว้ที่นี่ ส่ง {long:true} เพื่อให้ได้ชื่อ
+    // เดือนเต็มแบบเดิม ("สิงหาคม" ไม่ใช่ "ส.ค.")
+    const thaiDate = data.date ? formatThaiDate_(data.date, { long: true }) : "ไม่ระบุวันที่";
 
     const studentId = data.studentId || "unknown";
     const docName = `บันทึกตัดคะแนน_${studentId}`;
@@ -79,6 +73,12 @@ function generatePDF(data, refId) {
     // Service_Users.gs) แทน ตัดนักเรียนออกไปโดยอัตโนมัติเพราะไม่มีบัญชีในชีต
     // Users ตั้งแต่แรก — บัญชีที่ยังไม่ได้กรอกอีเมลไว้จะเปิดลิงก์นี้ไม่ได้ ต้องเติม
     // อีเมลให้ครบผ่านหน้า "จัดการผู้ใช้งาน" ก่อน
+    //
+    // 🛡️ ถ้ายังไม่มีอีเมลบุคลากรคนไหนบันทึกไว้เลย (เช่น เพิ่ง deploy โค้ดชุดนี้
+    // แต่ยังไม่ได้เติมอีเมลให้ครบ) ต้อง fallback กลับไปแชร์แบบ DOMAIN_WITH_LINK
+    // แบบเดิมไว้ก่อน — ห้าม "ไม่แชร์อะไรเลย" เด็ดขาด เพราะนั่นแย่กว่าปัญหาที่กำลัง
+    // แก้เสียอีก (เอกสารที่เพิ่งสร้างจะเปิดไม่ได้เลยแม้แต่ครูที่เพิ่งบันทึกเอง)
+    // พอมีใครสักคนเติมอีเมลแล้ว รายการที่สร้างหลังจากนั้นจะแคบลงเองอัตโนมัติ
     const staffEmails = getStaffEmails_();
     if (staffEmails.length > 0) {
         try {
@@ -91,6 +91,8 @@ function generatePDF(data, refId) {
                 try { pdfFile.addViewer(email); } catch (e2) { console.error('แชร์ PDF ให้ ' + email + ' ไม่สำเร็จ: ' + e2); }
             });
         }
+    } else {
+        pdfFile.setSharing(DriveApp.Access.DOMAIN_WITH_LINK, DriveApp.Permission.VIEW);
     }
 
     newFile.setTrashed(true);
@@ -113,8 +115,21 @@ function generatePDF(data, refId) {
 // แก้อีกแล้ว
 // ==========================================
 function migrateExistingPdfSharingToStaffOnly_() {
-    const folder = DriveApp.getFolderById(CONFIG.FOLDER_ID);
     const staffEmails = getStaffEmails_();
+
+    // 🛡️ ห้ามรันต่อเด็ดขาดถ้ายังไม่มีอีเมลบุคลากรคนไหนเลย — โค้ดเดิมจะ setSharing
+    // เป็น PRIVATE/NONE ให้ทุกไฟล์ก่อนเสมอ แล้ว "ค่อย" เช็กว่ามีอีเมลให้แชร์กลับไหม
+    // ทีหลัง ถ้าตอนนั้นยังไม่มีอีเมลเลยสักคน จะกลายเป็นล็อกเอกสารประวัติวินัยทั้ง
+    // หมดไม่ให้ใครดูได้เลยแม้แต่คนเดียว (แย่กว่าปัญหาเดิมที่ตั้งใจจะแก้เสียอีก) —
+    // ต้องเติมอีเมลอย่างน้อย 1 บัญชีในหน้า "จัดการผู้ใช้งาน" ก่อนรันฟังก์ชันนี้เสมอ
+    if (staffEmails.length === 0) {
+        Logger.log('ยังไม่มีอีเมลบุคลากรบันทึกไว้เลยสักบัญชี — หยุดทำงานทันที ไม่แตะไฟล์ใดๆ ' +
+            'กรุณาเติมอีเมลให้อย่างน้อย 1 บัญชีในหน้า "จัดการผู้ใช้งาน" ก่อน แล้วค่อยรันฟังก์ชันนี้ใหม่ ' +
+            '(ถ้ารันต่อตอนนี้ ไฟล์ PDF เก่าทั้งหมดจะถูกล็อกไม่ให้ใครดูได้เลย)');
+        return;
+    }
+
+    const folder = DriveApp.getFolderById(CONFIG.FOLDER_ID);
     const files = folder.getFilesByType(MimeType.PDF);
 
     const MAX_RUNTIME_MS = 5 * 60 * 1000; // เผื่อเวลาไว้ก่อนชนขีดจำกัด 6 นาทีของ Apps Script
@@ -134,8 +149,11 @@ function migrateExistingPdfSharingToStaffOnly_() {
         try {
             const access = file.getSharingAccess();
             if (access === DriveApp.Access.DOMAIN_WITH_LINK || access === DriveApp.Access.ANYONE_WITH_LINK || access === DriveApp.Access.ANYONE) {
+                // ตอนนี้มั่นใจแล้วว่า staffEmails ไม่ว่างแน่นอน (เช็กไว้ตั้งแต่ต้น
+                // ฟังก์ชันแล้วด้านบน) จึงปลอดภัยที่จะลบสิทธิ์เดิมก่อนแล้วค่อยแชร์
+                // ใหม่โดยไม่มีช่วงเวลาที่ไฟล์ไม่มีใครเข้าถึงได้เลย
                 file.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
-                if (staffEmails.length > 0) file.addViewers(staffEmails);
+                file.addViewers(staffEmails);
                 fixed++;
             }
         } catch (e) {

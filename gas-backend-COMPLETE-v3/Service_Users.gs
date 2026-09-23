@@ -186,6 +186,10 @@ function deleteUser(token, username) {
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]).trim() === String(username).trim()) {
       sheet.deleteRow(i + 1);
+      // 🔒 ล้างแคชอีเมลบุคลากรทันที (ดู getStaffEmails_ ด้านบน) — เดิมจุดนี้ไม่มี
+      // ทำให้ถ้าบัญชีที่เพิ่งลบมีอีเมลอยู่ในระบบ PDF ที่สร้างขึ้นภายใน 10 นาทีถัด
+      // มายังจะแชร์ให้บัญชีที่เพิ่งลบไปแล้วอยู่ดี (แคชเก่ายังไม่หมดอายุ)
+      invalidateStaffEmailsCache_();
       logAudit(session.username, "DELETE_USER", username, "SUCCESS");
       return { status: "success", message: "ลบผู้ใช้งานสำเร็จ" };
     }

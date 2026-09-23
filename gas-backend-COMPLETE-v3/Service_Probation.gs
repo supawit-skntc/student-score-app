@@ -50,12 +50,16 @@ function addProbationRecord(token, data) {
   const studentId = String((data && data.studentId) || '').trim();
   if (!studentId) return { status: "error", message: "ไม่พบรหัสนักเรียน" };
 
-  // 🔒 sanitizeForSheetCell_ (ดู Utils.gs) กันช่องหมายเหตุ/ชื่อ ใช้ตั้งสูตร Sheets ได้
+  // 🔒 sanitizeForSheetCell_ (ดู Utils.gs) กันทุกช่องข้อความอิสระ (ชื่อ/วันที่/
+  // หมายเหตุ) ใช้ตั้งสูตร Sheets ได้ — วันที่ต้องกันด้วยเหมือนกัน แม้ฝั่งเว็บจะจำกัด
+  // ด้วย <input type="date"> ไว้แล้วก็ตาม เพราะมีคนเรียก action นี้ตรงๆ ข้าม UI
+  // ได้เสมอถ้ามี token ที่ถูกต้อง (ห้ามเชื่อฝั่งเว็บฝ่ายเดียว — หลักการเดียวกับที่
+  // ใช้กับ studentName/note อยู่แล้ว)
   sheet.appendRow([
     new Date().toISOString(),
     studentId,
     sanitizeForSheetCell_((data && data.studentName) || ''),
-    (data && data.date) || '',
+    sanitizeForSheetCell_((data && data.date) || ''),
     session.username,
     sanitizeForSheetCell_((data && data.note) || ''),
   ]);
@@ -90,8 +94,18 @@ function getProbationStatus(token) {
     const studentId = String(data[i][1] || '').trim();
     if (!studentId) continue;
     if (!byStudent[studentId]) byStudent[studentId] = [];
+    // 🐛 เดิมทำ String(data[i][3]) ตรงๆ — Sheets แปลงสตริงที่หน้าตาเหมือนวันที่
+    // ("2026-09-23") เป็นเซลล์ชนิด Date อัตโนมัติตอนเขียน พออ่านกลับมาได้ Date
+    // object ไม่ใช่ string เดิม String(dateObject) เลยได้ข้อความยาวเฟะแบบ "Wed
+    // Sep 23 2026 00:00:00 GMT+0700 ..." แทนวันที่อ่านง่าย — ใช้
+    // formatThaiDate_ (Utils.gs) และ toIsoDateString_ (Service_Records.gs — คน
+    // ละไฟล์กัน แต่ GAS มองเห็นกันหมดในโปรเจกต์เดียวอยู่แล้ว ไม่ต้อง import)
+    // แบบเดียวกับ mapRowToRecord_ ใน Service_Records.gs แทน (รองรับทั้ง Date
+    // object และ string อยู่แล้ว)
+    const rawDate = data[i][3];
     byStudent[studentId].push({
-      date: String(data[i][3] || ''),
+      date: rawDate ? toIsoDateString_(rawDate) : '',
+      displayDate: formatThaiDate_(rawDate),
       recordedBy: String(data[i][4] || ''),
       note: String(data[i][5] || ''),
     });

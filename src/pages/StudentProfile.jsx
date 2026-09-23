@@ -309,7 +309,7 @@ export default function StudentProfile({ initialStudentId }) {
                 {selectedProbation.map((p, i) => (
                   <div key={i} className="flex items-center justify-between gap-3 rounded-[13px] bg-bad-bg/50 px-3.5 py-2.5">
                     <div className="min-w-0">
-                      <p className="text-[13.5px] font-semibold text-ink">{p.date || 'ไม่ระบุวันที่'}</p>
+                      <p className="text-[13.5px] font-semibold text-ink">{p.displayDate || 'ไม่ระบุวันที่'}</p>
                       {p.note && <p className="mt-0.5 text-xs text-ink-mute truncate">{p.note}</p>}
                     </div>
                     <span className="shrink-0 text-[11px] text-ink-faint">บันทึกโดย {p.recordedBy}</span>

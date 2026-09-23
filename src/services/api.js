@@ -1,7 +1,7 @@
 // src/services/api.js
 
 // URL ของ Google Apps Script (Web App) จากระบบเดิมของคุณ
-const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyj2LtWe59vno5BhHWrkM7dr_0qyYAQm4cXKSoRvDJGMPmIdKyLJOKjiYGmJoFN2X2Y/exec";
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbw3kcF6YNAm_lq_UrLLL5YoCtY1wrJPo8AlLh2VSWLJbnRfB8cgJXYtF2jR8fOXVZtP/exec";
 
 // Google เด้งหน้า HTML กลับมาแทน JSON เป็นครั้งคราวโดยไม่มีสาเหตุจากโค้ดเราเลย
 // (เจอมาแล้วหลายครั้ง ทั้งฝั่งเว็บนี้และฝั่งบอท RPA) ลองใหม่อัตโนมัติสั้นๆ ก่อนจะ
