@@ -150,6 +150,13 @@ export default function StudentProfile({ initialStudentId }) {
   );
   const selected = students.find((s) => s.studentId === selectedId) || filtered[0] || null;
 
+  // 🔎 นักเรียนที่มีประวัติทัณฑ์บน (คนละเรื่องกับคะแนนสะสม ไม่รีเซ็ตทุกปี) — เดิม
+  // ช่องค้นหาว่างๆ จะโชว์แค่ข้อความ "พิมพ์เพื่อค้นหา" เฉยๆ ทำให้คนที่ทำทัณฑ์บนไป
+  // แล้วแต่คะแนนสะสมปีนี้ยังไม่ถึงเกณฑ์ (เลยไม่โผล่ในการ์ด "นักเรียนที่ถึงเกณฑ์"
+  // ของแดชบอร์ด) ไม่มีทางเจอได้เลยนอกจากพิมพ์ชื่อเดาตรงๆ — ใช้ students (เรียง
+  // ตามคะแนนสะสมมากไปน้อยอยู่แล้ว) กรองเอาเฉพาะคนที่มีอยู่ใน probationByStudent
+  const probationStudents = students.filter((s) => (probationByStudent[s.studentId]?.length || 0) > 0);
+
   // จัดกลุ่มประวัติตามปีการศึกษา (ปีล่าสุดก่อน) ให้เห็นชัดว่าคะแนนสะสมด้านบนนับ
   // จากปีไหน ส่วนปีก่อนหน้ายังดูประวัติได้แต่ไม่ถูกนับรวมในคะแนนสะสมแล้ว
   const historyGroups = [];
@@ -199,7 +206,31 @@ export default function StudentProfile({ initialStudentId }) {
         </div>
 
         {searchTerm.trim() === '' ? (
-          <p className="py-6 text-center text-sm text-ink-faint">พิมพ์รหัสหรือชื่อเพื่อค้นหานักเรียน</p>
+          probationStudents.length > 0 ? (
+            <>
+              <div className="mb-2.5 flex items-center gap-1.5 text-xs font-semibold text-ink-mute">
+                <ShieldAlert size={13} className="text-bad-fg" />
+                นักเรียนที่มีประวัติทัณฑ์บน ({probationStudents.length} คน)
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {probationStudents.map((s) => (
+                  <button
+                    key={s.studentId}
+                    onClick={() => setSelectedId(s.studentId)}
+                    className="inline-flex items-center gap-2 min-h-11 rounded-[14px] pl-3.5 pr-3 text-[13.5px] font-semibold border-[1.5px] border-bad-fg/25 bg-bad-bg/60 text-bad-fg hover:brightness-95 transition-colors"
+                  >
+                    {s.name}
+                    <span className="inline-flex items-center rounded-full bg-bad-fg/15 px-2 py-0.5 text-[11px] font-bold">
+                      ×{probationByStudent[s.studentId].length}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-ink-faint">หรือพิมพ์รหัส/ชื่อด้านบนเพื่อค้นหานักเรียนคนอื่น</p>
+            </>
+          ) : (
+            <p className="py-6 text-center text-sm text-ink-faint">พิมพ์รหัสหรือชื่อเพื่อค้นหานักเรียน</p>
+          )
         ) : filtered.length === 0 ? (
           <p className="py-6 text-center text-sm text-ink-faint">ไม่พบนักเรียนที่ค้นหา</p>
         ) : (

@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Loader2, Search, Inbox } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
+import Pagination from '../components/ui/Pagination';
+
+const PAGE_SIZE = 20;
 
 const ACTION_LABELS = {
   CREATE_RECORD: 'สร้างรายการตัดคะแนน',
@@ -25,6 +28,7 @@ export default function AuditLog() {
   const [logs, setLogs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     (async () => {
@@ -49,6 +53,14 @@ export default function AuditLog() {
     l.targetId.includes(searchTerm) ||
     (ACTION_LABELS[l.action] || l.action).includes(searchTerm)
   );
+
+  // ⏮️ กลับไปหน้า 1 ทุกครั้งที่ค้นหาใหม่ — กันเผลอค้างอยู่หน้าท้ายๆ แล้วเจอ "ไม่พบ
+  // ข้อมูล" ทั้งที่จริงๆ มีข้อมูลอยู่แค่หน้าอื่น
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm]);
+
+  const pageLogs = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div className="bg-white p-6 rounded-2xl shadow-card border border-slate-100">
@@ -88,8 +100,8 @@ export default function AuditLog() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.length > 0 ? (
-                filtered.map((log, i) => (
+              {pageLogs.length > 0 ? (
+                pageLogs.map((log, i) => (
                   <tr key={i} className="hover:bg-brand-50/40 transition-colors bg-white">
                     <td className="p-4 text-sm text-slate-500 whitespace-nowrap">{formatLogTime(log.timestamp)}</td>
                     <td className="p-4 text-sm font-semibold text-slate-700">{log.user || '-'}</td>
@@ -116,6 +128,12 @@ export default function AuditLog() {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {!isLoading && filtered.length > 0 && (
+        <div className="mt-4">
+          <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPageChange={setPage} />
         </div>
       )}
     </div>

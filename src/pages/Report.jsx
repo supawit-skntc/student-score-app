@@ -10,6 +10,9 @@ import { todayLocalISO } from '../utils/date';
 import { parsePoints } from '../utils/points';
 import { escapeHtml } from '../utils/html';
 import EditRecordModal from '../components/EditRecordModal';
+import Pagination from '../components/ui/Pagination';
+
+const PAGE_SIZE = 20;
 
 // text-[16px] (ไม่ใช่ 13px) เพราะเป็นฟอนต์ของ <select>/<input type="date"> จริง
 // — ต่ำกว่า 16px iOS Safari จะซูมจอเข้าอัตโนมัติทุกครั้งที่แตะโฟกัสบนมือถือ
@@ -42,6 +45,7 @@ export default function Report({ onViewStudent }) {
   const [filterHighRisk, setFilterHighRisk] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [page, setPage] = useState(1);
 
   // State สำหรับเก็บข้อมูลในหน้าต่างแก้ไข
   const [editingRecord, setEditingRecord] = useState(null);
@@ -271,6 +275,14 @@ export default function Report({ onViewStudent }) {
     return matchesSearch && matchesLevel && matchesMajor && matchesFrom && matchesTo && matchesHighRisk;
   });
 
+  // ⏮️ กลับไปหน้า 1 ทุกครั้งที่ผลลัพธ์เปลี่ยน (ค้นหา/กรองใหม่) — กันเผลอค้างอยู่
+  // หน้า 3 แล้วเจอ "ไม่พบข้อมูล" ทั้งที่จริงๆ มีข้อมูลอยู่แค่หน้าอื่น
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, filterLevel, filterMajor, filterFrom, filterTo, filterHighRisk]);
+
+  const pageRecords = filteredRecords.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   // ส่งออกเฉพาะรายการที่กำลังเห็นอยู่บนจอ (ตรงกับตัวกรอง/คำค้นหาปัจจุบัน) — ทำ
   // ทั้งหมดที่ฝั่งเบราว์เซอร์จากข้อมูลที่โหลดมาอยู่แล้ว ไม่ต้องยิง request ใหม่
   //
@@ -469,7 +481,7 @@ export default function Report({ onViewStudent }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line-soft">
-                  {filteredRecords.map((record, index) => (
+                  {pageRecords.map((record, index) => (
                     <tr key={index} className="hover:bg-[#FDF7F6] transition-colors bg-white">
                       <td className="p-4 text-[13.5px] text-ink-mute whitespace-nowrap">{record.displayDate}</td>
                       <td className="p-4 text-[13.5px] font-bold text-brand-600">{record.studentId}</td>
@@ -549,7 +561,7 @@ export default function Report({ onViewStudent }) {
 
           {/* --- Mobile: record cards --- */}
           <div className="md:hidden flex flex-col gap-2.5">
-            {filteredRecords.map((record, index) => (
+            {pageRecords.map((record, index) => (
               <div key={index} className="bg-white rounded-[18px] border border-line p-3.5 flex flex-col gap-2.5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -615,6 +627,8 @@ export default function Report({ onViewStudent }) {
               </div>
             ))}
           </div>
+
+          <Pagination page={page} pageSize={PAGE_SIZE} total={filteredRecords.length} onPageChange={setPage} />
         </>
       )}
 
