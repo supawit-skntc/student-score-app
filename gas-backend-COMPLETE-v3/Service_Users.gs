@@ -65,9 +65,13 @@ function getUsersList(token) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Users");
   if (!sheet) return { status: "error", message: "ไม่พบฐานข้อมูลผู้ใช้งาน" };
 
-  const data = sheet.getDataRange().getValues();
+  // 🚀 อ่านเฉพาะคอลัมน์ A-D (ชื่อผู้ใช้/รหัสผ่านแฮช/ชื่อ/บทบาท) แทนทั้งชีต — ไม่ต้อง
+  // ดึง Salt/Email ที่ไม่ได้ใช้ และไม่ต้องให้ข้อมูลอ่อนไหวเข้ามาอยู่ในหน่วยความจำมาก
+  // กว่าที่จำเป็น (คอลัมน์ B ถูกอ่านมาด้วยเพราะอยู่กลางช่วง แต่ไม่เคยถูกใส่ใน response)
+  const lastRow = sheet.getLastRow();
+  const data = lastRow >= 2 ? sheet.getRange(2, 1, lastRow - 1, 4).getValues() : [];
   const users = [];
-  for (let i = 1; i < data.length; i++) {
+  for (let i = 0; i < data.length; i++) {
     if (!data[i][0]) continue;
     users.push({
       username: String(data[i][0]).trim(),
@@ -76,7 +80,9 @@ function getUsersList(token) {
       // ⚠️ ห้ามส่ง Password_Hash (คอลัมน์ B) กลับไปฝั่ง client เด็ดขาด
     });
   }
-  return { status: "success", data: users };
+  // 🚀 แนบ roleTiers มาในคำตอบเดียวกัน (เดิมหน้านี้ยิง getRoleTiers แยกอีก 1 รอบทุกครั้ง
+  // ที่เปิดหน้า = อีก ~2 วินาที ทั้งที่เป็นค่าคงที่ในโค้ด ดู getRoleTiers ด้านล่าง)
+  return { status: "success", data: users, roleTiers: buildRoleTierMap_() };
 }
 
 // ==========================================
@@ -112,6 +118,9 @@ function createUser(token, newUserData) {
   if (!newUserData.password || String(newUserData.password).length < 8) {
     return { status: "error", message: "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร" };
   }
+  if (!isKnownRole_(newUserData.role)) {
+    return { status: "error", message: "บทบาทไม่ถูกต้อง กรุณาเลือกบทบาทจากรายการ" };
+  }
 
   const salt = generateSalt();
   const saltedHash = hashPassword(String(newUserData.password).trim(), salt);
@@ -122,7 +131,7 @@ function createUser(token, newUserData) {
   // 🔒 sanitizeForSheetCell_ (ดู Utils.gs) กันช่องชื่อ-นามสกุลใช้ตั้งสูตร Sheets
   // ได้ — ความเสี่ยงต่ำกว่าฝั่ง Records เพราะหน้านี้ admin เท่านั้นที่เขียนถึง แต่
   // ทำไว้เผื่อบัญชี admin ถูกขโมย/ใช้งานผิดพลาด ต้นทุนแทบเป็นศูนย์
-  sheet.appendRow([username, saltedHash, sanitizeForSheetCell_(newUserData.fullName || ''), newUserData.role || '', salt, newUserData.email || '']);
+  sheet.appendRow([username, saltedHash, sanitizeForSheetCell_(newUserData.fullName || ''), newUserData.role || '', salt, sanitizeForSheetCell_(newUserData.email || '')]);
   invalidateStaffEmailsCache_();
 
   logAudit(getSession(token).username, "CREATE_USER", username, "SUCCESS");
@@ -145,26 +154,44 @@ function updateUser(token, updatedData) {
   }
   if (rowIndex === -1) return { status: "error", message: "ไม่พบผู้ใช้งานนี้" };
 
+  // 🐛 ตรวจทุกอย่างให้ครบ "ก่อน" เขียนอะไรลงชีตเลย — เดิมเช็กรหัสผ่านสั้นเกินเป็นขั้น
+  // สุดท้ายหลังเขียนชื่อ/บทบาท/อีเมลไปแล้ว ทำให้ตอบ error กลับไปแต่ข้อมูลบางส่วนถูก
+  // บันทึกจริงไปแล้ว (ผู้ดูแลระบบเข้าใจว่าไม่สำเร็จ) และไม่มี audit log ของการเขียนนั้น
+  if (updatedData.password && String(updatedData.password).length < 8) {
+    return { status: "error", message: "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร" };
+  }
+  // role ต้องเป็นค่าที่ระบบรู้จัก หรือเป็นค่าเดิมของบัญชีนี้ (บัญชีเก่ามี role รุ่นเก่าที่
+  // ไม่อยู่ในตัวเลือกใหม่ ต้องบันทึกซ้ำโดยไม่เปลี่ยน role ได้)
+  const oldRole = String(data[rowIndex - 1][3] || '').trim();
+  const newRole = String(updatedData.role || '').trim();
+  if (!isKnownRole_(newRole) && newRole !== oldRole) {
+    return { status: "error", message: "บทบาทไม่ถูกต้อง กรุณาเลือกบทบาทจากรายการ" };
+  }
+
   sheet.getRange(rowIndex, 3).setValue(sanitizeForSheetCell_(updatedData.fullName || ''));
-  sheet.getRange(rowIndex, 4).setValue(updatedData.role || '');
+  sheet.getRange(rowIndex, 4).setValue(newRole);
 
   // อีเมลไม่ถูกส่งกลับมาแสดงในฟอร์มแก้ไข (getUsersList ไม่คืนค่านี้ไปให้เว็บเลย)
   // ดังนั้นถ้าช่องว่างเปล่าตอนบันทึก แปลว่า "ไม่ได้ตั้งใจแก้" ไม่ใช่ "ต้องการลบ
   // อีเมลเดิมทิ้ง" จึงเขียนทับเฉพาะตอนมีค่าจริงส่งมาเท่านั้น กันข้อมูลหายโดยไม่ตั้งใจ
   if (updatedData.email) {
-    sheet.getRange(rowIndex, 6).setValue(updatedData.email);
+    sheet.getRange(rowIndex, 6).setValue(sanitizeForSheetCell_(updatedData.email));
     invalidateStaffEmailsCache_();
   }
 
   if (updatedData.password) {
-    if (String(updatedData.password).length < 8) {
-      return { status: "error", message: "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร" };
-    }
     // รีเซ็ตรหัสผ่านทีไร ก็สุ่ม salt ใหม่ให้เลย — เป็นจังหวะธรรมชาติที่จะอัปเกรด
     // บัญชีเก่า (ที่ยังไม่มี salt มาก่อน) ให้มี salt ไปในตัวโดยไม่ต้องทำอะไรพิเศษ
     const salt = generateSalt();
     sheet.getRange(rowIndex, 2).setValue(hashPassword(String(updatedData.password).trim(), salt));
     sheet.getRange(rowIndex, 5).setValue(salt);
+  }
+
+  // 🔒 เปลี่ยนบทบาทหรือรีเซ็ตรหัสผ่าน = token เดิมของบัญชีนี้ต้องใช้ไม่ได้ทันที
+  // (ไม่งั้นบทบาทเก่า/รหัสผ่านที่ถูกรีเซ็ตเพราะสงสัยว่ารั่ว ยังใช้งานต่อได้อีก
+  // สูงสุด 6 ชั่วโมง) — ดู revokeUserSessions_ ใน Utils.gs
+  if (updatedData.password || newRole !== oldRole) {
+    revokeUserSessions_(String(updatedData.username).trim());
   }
 
   logAudit(session.username, "UPDATE_USER", updatedData.username, "SUCCESS");
@@ -186,6 +213,9 @@ function deleteUser(token, username) {
   for (let i = 1; i < data.length; i++) {
     if (String(data[i][0]).trim() === String(username).trim()) {
       sheet.deleteRow(i + 1);
+      // 🔒 บัญชีที่ถูกลบต้องเข้าระบบต่อไม่ได้ทันที — เดิม token ที่ออกไปแล้วยังใช้ได้
+      // ต่ออีกสูงสุด 6 ชั่วโมงหลังลบบัญชี (ดู revokeUserSessions_ ใน Utils.gs)
+      revokeUserSessions_(String(username).trim());
       // 🔒 ล้างแคชอีเมลบุคลากรทันที (ดู getStaffEmails_ ด้านบน) — เดิมจุดนี้ไม่มี
       // ทำให้ถ้าบัญชีที่เพิ่งลบมีอีเมลอยู่ในระบบ PDF ที่สร้างขึ้นภายใน 10 นาทีถัด
       // มายังจะแชร์ให้บัญชีที่เพิ่งลบไปแล้วอยู่ดี (แคชเก่ายังไม่หมดอายุ)

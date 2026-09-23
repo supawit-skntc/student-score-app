@@ -143,9 +143,16 @@ function getAuditLogs(token) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Audit_Logs");
   if (!sheet) return { status: "success", data: [] }; // ยังไม่เคยมีการบันทึกเหตุการณ์ใดเลย
 
-  const data = sheet.getDataRange().getValues();
+  // 🚀 อ่านเฉพาะ "500 แถวล่าสุด" ตรงๆ จากท้ายชีต (แถวถูกต่อท้ายตามเวลาเสมอด้วย
+  // appendRow) แทนอ่านทั้งชีตแล้วค่อยตัดเหลือ 500 ในหน่วยความจำ — เดิมต้นทุนการอ่านโตตาม
+  // จำนวนแถวทั้งหมดที่สะสมมาตลอดอายุระบบ (ยิ่งใช้นานยิ่งช้า แคช 30 วิช่วยได้แค่ครั้งที่
+  // 2 เป็นต้นไป) ตอนนี้อ่านคงที่ 500 แถว/5 คอลัมน์ ไม่ว่าชีตจะโตแค่ไหน
+  const MAX_ROWS = 500;
+  const lastRow = sheet.getLastRow();
+  const firstRow = Math.max(2, lastRow - MAX_ROWS + 1);
+  const data = lastRow >= 2 ? sheet.getRange(firstRow, 1, lastRow - firstRow + 1, 5).getValues() : [];
   const logs = [];
-  for (let i = 1; i < data.length; i++) {
+  for (let i = data.length - 1; i >= 0; i--) { // ล่าสุดขึ้นก่อน
     logs.push({
       timestamp: String(data[i][0] || ""),
       user: String(data[i][1] || ""),
@@ -154,10 +161,7 @@ function getAuditLogs(token) {
       status: String(data[i][4] || ""),
     });
   }
-
-  logs.reverse(); // ล่าสุดขึ้นก่อน
-  const MAX_ROWS = 500;
-  const result = logs.slice(0, MAX_ROWS);
+  const result = logs;
 
   putChunkedCache_(AUDIT_LOGS_CACHE_KEY, JSON.stringify(result), AUDIT_LOGS_CACHE_TTL_SECONDS);
 
@@ -245,9 +249,20 @@ function createSession(user) {
   const cache = CacheService.getScriptCache();
   cache.put('session_' + token, JSON.stringify({
     username: user.username,
-    role: user.role
+    role: user.role,
+    iat: Date.now() // เวลาออก token — ใช้เทียบกับเวลายกเลิกสิทธิ์ (revokeUserSessions_)
   }), SESSION_TTL_SECONDS);
   return token;
+}
+
+// 🔒 ยกเลิก session ทั้งหมดที่ออกให้บัญชีนี้ก่อนเวลานี้ — CacheService ค้นหา token
+// จากชื่อผู้ใช้ไม่ได้ (คีย์คือตัว token เอง) จึงบันทึก "เวลาที่ยกเลิก" ไว้ต่อชื่อผู้ใช้
+// แล้วให้ getSession() เทียบกับเวลาออก token (iat) ทุกครั้ง เดิมลบผู้ใช้/ลดสิทธิ์/
+// รีเซ็ตรหัสผ่านแล้ว token เดิมของคนนั้นยังใช้ได้ต่ออีกสูงสุด 6 ชั่วโมงด้วยสิทธิ์เก่า
+// (เช่น แอดมินที่เพิ่งถูกลดเป็นครูยังลบรายการได้อยู่) — TTL เท่าอายุ session สูงสุดพอดี
+function revokeUserSessions_(username) {
+  if (!username) return;
+  CacheService.getScriptCache().put('user_rev_' + String(username).trim(), String(Date.now()), SESSION_TTL_SECONDS);
 }
 
 // 🧠 จำผลตรวจ session/rate limit ไว้ "ภายในคำขอเดียว" — doPost ใน Main.gs เรียก
@@ -272,7 +287,12 @@ function getSession(token) {
   }
   const cache = CacheService.getScriptCache();
   const raw = cache.get('session_' + token);
-  const session = raw ? JSON.parse(raw) : null;
+  let session = raw ? JSON.parse(raw) : null;
+  if (session) {
+    const revokedAt = parseInt(cache.get('user_rev_' + session.username) || '0', 10);
+    // <= (ไม่ใช่ <) — token ที่ออกในมิลลิวินาทีเดียวกับเวลายกเลิกต้องถือว่าถูกยกเลิกด้วย ปลอดภัยไว้ก่อน (ผู้ใช้แค่ต้อง login ใหม่)
+    if (revokedAt && (session.iat || 0) <= revokedAt) session = null;
+  }
   REQUEST_MEMO_.sessions[token] = session;
   return session;
 }
@@ -307,6 +327,32 @@ function requireAdmin(token) {
 function requireDisciplineStaff_(token) {
   const session = requireSession(token);
   if (ADMIN_ROLES.indexOf(session.role) === -1 && FULL_VISIBILITY_ROLES.indexOf(session.role) === -1) {
+    throw new Error('คุณไม่มีสิทธิ์เข้าถึงฟังก์ชันนี้');
+  }
+  return session;
+}
+
+// role ที่ระบบรู้จักทั้งหมดฝั่งเซิร์ฟเวอร์ (รวม role เก่าที่เก็บไว้รองรับบัญชีเดิม) —
+// ใช้ตรวจตอนสร้าง/แก้ไขผู้ใช้ กันบันทึก role มั่ว (พิมพ์ผิด/ค่าว่าง) ซึ่งจะถูกจัดเป็น
+// ผู้ใช้ทั่วไปเงียบๆ และกันคนที่เรียก API ตรงส่ง role แปลกๆ เข้ามา
+function isKnownRole_(role) {
+  return role === 'ครูผู้สอน' || ADMIN_ROLES.indexOf(role) !== -1 || FULL_VISIBILITY_ROLES.indexOf(role) !== -1;
+}
+
+// เห็น/แก้ไขได้ทุกรายการ (แอดมิน + กลุ่มเห็นทุกรายการ) — ตรงกับที่ getMyRecords ใช้
+function canAccessAllRecords_(session) {
+  return ADMIN_ROLES.indexOf(session.role) !== -1 || FULL_VISIBILITY_ROLES.indexOf(session.role) !== -1;
+}
+
+// ใช้กับ action ของบอท RPA (คิวงาน/อัปเดตสถานะ/บันทึก log/แจ้งเตือนล้มเหลว) — เดิมทุก
+// action เหล่านี้ผ่านแค่ requireSession ที่ Main.gs ทำให้ ครูผู้สอนคนไหนที่ login อยู่ก็
+// เรียกได้: ดึงคิวรายชื่อนักเรียนทั้งหมด, สั่งเปลี่ยนสถานะรายการเป็น "synced" ทั้งที่ยัง
+// ไม่เคยส่งเข้า RMS (รายการนั้นจะไม่ถูกส่งอีกเลย), ยัดข้อความเข้าชีต RPA_Log — จำกัด
+// เหลือแค่แอดมินกับบัญชีบอท (CONFIG.BOT_USERNAMES)
+function requireBotOrAdmin_(token) {
+  const session = requireSession(token);
+  const isBot = CONFIG.BOT_USERNAMES.indexOf(session.username) !== -1;
+  if (!isBot && ADMIN_ROLES.indexOf(session.role) === -1) {
     throw new Error('คุณไม่มีสิทธิ์เข้าถึงฟังก์ชันนี้');
   }
   return session;

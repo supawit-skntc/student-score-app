@@ -85,13 +85,13 @@ function doPost(e) {
       // "login" เป็นผู้ใช้งานปกติ 1 บัญชี (สร้างผ่านหน้าจัดการผู้ใช้งาน) แล้วใช้
       // token เดียวกับที่ระบบอื่นใช้อยู่แล้ว ไม่ต้องตั้งค่า Google Cloud เพิ่มเลย =====
       case "getSyncQueue":
-        response = getSyncQueue();
+        response = getSyncQueue(token);
         break;
       case "updateSyncStatus":
-        response = updateSyncStatus(requestBody.data);
+        response = updateSyncStatus(token, requestBody.data);
         break;
       case "logRpaEvent":
-        response = logRpaEvent(requestBody.data);
+        response = logRpaEvent(token, requestBody.data);
         break;
       case "reportBotFailure":
         response = reportBotFailure(token, requestBody.data && requestBody.data.message);

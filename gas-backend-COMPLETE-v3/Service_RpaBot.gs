@@ -43,7 +43,8 @@ function setupSyncColumns() {
 // ==========================================
 // 2. คิวงานให้บอทดึงไปประมวลผล (เฉพาะรายการสถานะ "pending" ที่ยังไม่ถูกลบ)
 // ==========================================
-function getSyncQueue() {
+function getSyncQueue(token) {
+  requireBotOrAdmin_(token);
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
   if (!sheet) return { status: "error", message: "ไม่พบแผ่นงาน Records" };
 
@@ -90,9 +91,18 @@ function getSyncQueue() {
 // ==========================================
 // 3. บอทเรียกกลับมาอัปเดตผลลัพธ์หลังประมวลผลแต่ละรายการ
 // ==========================================
-function updateSyncStatus(payload) {
+function updateSyncStatus(token, payload) {
+  requireBotOrAdmin_(token);
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
   if (!sheet) return { status: "error", message: "ไม่พบแผ่นงาน Records" };
+
+  // 🔒 รับเฉพาะสถานะที่ระบบรู้จัก (บอทส่งแค่ synced/needs_review/error — ดู
+  // SYNC_STATUS_MAP ฝั่งเว็บ) กันค่าแปลกเข้าคอลัมน์สถานะ และ note เป็นข้อความอิสระ
+  // จึงต้อง sanitizeForSheetCell_ กันสูตร Sheets เหมือนช่องอื่น
+  const ALLOWED_SYNC_STATUS = ['pending', 'synced', 'needs_review', 'error'];
+  if (!payload || ALLOWED_SYNC_STATUS.indexOf(String(payload.status)) === -1) {
+    return { status: "error", message: "สถานะไม่ถูกต้อง" };
+  }
 
   // 🚀 ลองใช้ตำแหน่งแถวจากแคชก่อน (ที่ getSyncQueue() เพิ่งเก็บไว้ตอนต้นรอบรัน
   // ของบอท) กันอ่านทั้งชีตใหม่ทุกครั้งที่มีรายการเสร็จ 1 รายการ — ถ้าไม่เจอในแคช
@@ -106,9 +116,9 @@ function updateSyncStatus(payload) {
     return { status: "error", message: "ไม่พบรายการที่ id นี้: " + payload.id };
   }
 
-  sheet.getRange(rowIndex, 15).setValue(payload.status || "");
+  sheet.getRange(rowIndex, 15).setValue(String(payload.status));
   sheet.getRange(rowIndex, 16).setValue(new Date().toISOString());
-  sheet.getRange(rowIndex, 17).setValue(payload.note || "");
+  sheet.getRange(rowIndex, 17).setValue(sanitizeForSheetCell_(payload.note || ""));
   // 🐛 เดิมจุดนี้ไม่เคยล้างแคชของ getRecords()/getMyRecords() เลย — พอบอทอัปเดต
   // สถานะเสร็จ แผงควบคุม/รายงานฝั่งเว็บอาจยังเห็นสถานะเก่าค้างอยู่ได้นานสุด 30
   // วินาที (อายุแคชที่ตั้งไว้) ก่อนจะรีเฟรชเป็นค่าล่าสุดเอง
@@ -125,7 +135,7 @@ function updateSyncStatus(payload) {
 // แยกต่างหากสำหรับบอทเลย ได้ cooldown กันสแปม/ตั้งค่าอีเมลผู้รับมาฟรีๆ
 // ==========================================
 function reportBotFailure(token, message) {
-  requireSession(token);
+  requireBotOrAdmin_(token);
   notifyAdminOfError_(new Error(String(message || 'ไม่ทราบสาเหตุ')), { action: 'rpa-bot' });
   return { status: "success" };
 }
@@ -140,7 +150,8 @@ function reportBotFailure(token, message) {
 const RPA_STATS_CACHE_KEY = 'rpa_stats_v1';
 const RPA_STATS_CACHE_TTL_SECONDS = 30;
 
-function logRpaEvent(payload) {
+function logRpaEvent(token, payload) {
+  requireBotOrAdmin_(token);
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName("RPA_Log");
 
@@ -152,11 +163,13 @@ function logRpaEvent(payload) {
 
   sheet.appendRow([
     new Date().toISOString(),
-    payload.recordId || "",
-    payload.studentId || "",
-    payload.offense || "",
-    payload.status || "",
-    payload.message || "",
+    // 🔒 sanitizeForSheetCell_ ครอบทุกช่องข้อความ (ข้อความ error จาก RMS/ฐานความผิด
+    // ที่บอทส่งมาเป็นข้อความอิสระ) กันสูตร Sheets เหมือนช่องอื่นของระบบ
+    sanitizeForSheetCell_(payload.recordId || ""),
+    sanitizeForSheetCell_(payload.studentId || ""),
+    sanitizeForSheetCell_(payload.offense || ""),
+    sanitizeForSheetCell_(payload.status || ""),
+    sanitizeForSheetCell_(payload.message || ""),
     payload.durationSeconds || ""
   ]);
   // 🔄 ล้างแคชสถิติ RPA (ดู getRpaStats ด้านล่าง) ทันทีที่มีการรันใหม่บันทึกเข้ามา

@@ -50,6 +50,10 @@ function findRecordByClientRequestId_(rows, clientRequestId) {
 
 function processRecordTransaction(token, data) {
   const session = getSession(token);
+  // 🔒 audit log ใช้ตัวตนที่ยืนยันแล้วจาก session ไม่ใช่ data.teacherName ที่ฝั่งเว็บส่งมา
+  // เอง (ปลอมได้ — ใครเรียก API ตรงก็ใส่ชื่อคนอื่นได้) ให้ตรงกับ action อื่นๆ (แก้ไข/ลบ)
+  // ที่ใช้ session.username อยู่แล้ว — teacherName ยังเก็บลงคอลัมน์ M เพื่อแสดงผลเหมือนเดิม
+  const auditActor = session ? session.username : data.teacherName;
 
   try {
     // 🚀 อ่านครั้งเดียวใช้ร่วมกันทั้ง 2 การเช็กด้านล่าง (ดูเหตุผลเต็มที่
@@ -59,7 +63,7 @@ function processRecordTransaction(token, data) {
     if (data.clientRequestId) {
       const existing = findRecordByClientRequestId_(rows, data.clientRequestId);
       if (existing) {
-        logAudit(data.teacherName, "CREATE_RECORD", data.studentId, "SUCCESS (duplicate submit — already recorded)");
+        logAudit(auditActor, "CREATE_RECORD", data.studentId, "SUCCESS (duplicate submit — already recorded)");
         return { status: "success", message: "บันทึกสำเร็จ", id: existing.id, pdfUrl: existing.pdfUrl };
       }
     }
@@ -70,7 +74,7 @@ function processRecordTransaction(token, data) {
     const offenseEntry = findOffenseEntry_(data.offense);
     if (offenseEntry && offenseEntry.noRepeatSameDay &&
         hasSameDayDuplicate_(rows, data.studentId, data.offense, data.date)) {
-      logAudit(data.teacherName, "CREATE_RECORD", data.studentId, "BLOCKED_DUPLICATE_SAME_DAY: " + data.offense);
+      logAudit(auditActor, "CREATE_RECORD", data.studentId, "BLOCKED_DUPLICATE_SAME_DAY: " + data.offense);
       return {
         status: "error",
         message: `นักเรียนคนนี้ถูกบันทึก "${data.offense}" ไปแล้วในวันที่ ${data.date} — ฐานความผิดนี้ตัดซ้ำในวันเดียวกันไม่ได้ ให้โอกาสนักเรียนไปแก้ไขก่อน`,
@@ -123,12 +127,12 @@ function processRecordTransaction(token, data) {
       lock.releaseLock();
     }
 
-    logAudit(data.teacherName, "CREATE_RECORD", data.studentId, "SUCCESS");
+    logAudit(auditActor, "CREATE_RECORD", data.studentId, "SUCCESS");
 
     return { status: "success", message: "บันทึกสำเร็จ", id: uuid, pdfUrl: "" };
 
   } catch (e) {
-    logAudit(data.teacherName, "CREATE_RECORD", data.studentId, "FAILED: " + e.message);
+    logAudit(auditActor, "CREATE_RECORD", data.studentId, "FAILED: " + e.message);
     return { status: "error", message: "ระบบเกิดข้อผิดพลาด: " + e.message };
   }
 }
@@ -316,7 +320,7 @@ function getRecords() {
 // ==========================================
 function getMyRecords(token) {
   const session = requireSession(token);
-  const canSeeAll = ADMIN_ROLES.indexOf(session.role) !== -1 || FULL_VISIBILITY_ROLES.indexOf(session.role) !== -1;
+  const canSeeAll = canAccessAllRecords_(session);
 
   const rows = readActiveRecordRows_();
   if (rows === null) return { status: "error", message: "ไม่พบแผ่นงานข้อมูลระบบ" };
@@ -344,6 +348,19 @@ function updateRecord(token, updatedData) {
 
   const rowIndex = findRecordRowIndexById_(sheet, updatedData.id);
   if (rowIndex === null) return { status: "error", message: "ไม่พบข้อมูลที่ต้องการแก้ไข" };
+
+  // 🔒 ครูทั่วไปแก้ไขได้เฉพาะรายการที่ตัวเองบันทึก (หรือรายการเก่าที่ไม่มีเจ้าของ —
+  // กฎเดียวกับที่ getMyRecords ใช้ตัดสินว่าใครเห็นรายการไหน) — เดิมหน้ารายงานซ่อนปุ่ม
+  // แก้ไขของรายการคนอื่นให้เท่านั้น แต่ตัว API ไม่ตรวจอะไรเลย ใครก็ตามที่ login อยู่
+  // ส่ง id ของรายการใดก็ได้มาแก้ไข (รวมถึงเปลี่ยนคะแนน/ฐานความผิดของนักเรียนคนอื่น)
+  // ได้ตรงๆ — คอลัมน์ S (19) = Created_By_Username
+  if (!canAccessAllRecords_(session)) {
+    const createdBy = String(sheet.getRange(rowIndex, 19).getValue() || "").trim();
+    if (createdBy && createdBy !== session.username) {
+      logAudit(session.username, "UPDATE_RECORD", updatedData.studentId, "DENIED_NOT_OWNER");
+      return { status: "error", message: "คุณไม่มีสิทธิ์แก้ไขรายการที่ผู้อื่นเป็นผู้บันทึก" };
+    }
+  }
 
   const oldPdfUrl = String(sheet.getRange(rowIndex, 14).getValue());
   try {

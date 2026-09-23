@@ -37,9 +37,6 @@ export default function UserManagement() {
 
   useEffect(() => {
     fetchUsers();
-    callAPI('getRoleTiers', {}).then((result) => {
-      if (result.status === 'success') setRoleTiers(result.data || {});
-    });
   }, []);
 
   const fetchUsers = async () => {
@@ -51,6 +48,16 @@ export default function UserManagement() {
       const result = await callAPI('getUsers', {});
       if (result.status === 'success') {
         setUsers(result.data || []);
+        // 🚀 roleTiers มากับคำตอบ getUsers เดียวกันเลย (เดิมยิง getRoleTiers แยกอีก 1
+        // รอบทุกครั้งที่เปิดหน้า = อีก ~2 วินาที) — fallback ไปเรียก getRoleTiers เดิม
+        // ถ้าคำตอบไม่มี roleTiers (เว็บ deploy ใหม่แล้วแต่ Apps Script ยังเป็นเวอร์ชันเก่า)
+        if (result.roleTiers) {
+          setRoleTiers(result.roleTiers);
+        } else {
+          callAPI('getRoleTiers', {}).then((r) => {
+            if (r.status === 'success') setRoleTiers(r.data || {});
+          });
+        }
       } else {
         Swal.fire('ข้อผิดพลาด', result.message || 'ไม่สามารถดึงข้อมูลผู้ใช้งานได้', 'error');
       }
@@ -100,7 +107,13 @@ export default function UserManagement() {
       }
       Swal.fire({ icon: 'success', title: 'บันทึกสำเร็จ', timer: 1500, showConfirmButton: false });
       closeModal();
-      fetchUsers();
+      // อัปเดตรายการในหน้าจอเองเลย ไม่โหลดรายชื่อทั้งหมดซ้ำพร้อมหน้าจอหมุนเต็ม (เดิม
+      // ทำ fetchUsers() อีกรอบ = อีก ~2 วินาที) — getUsers คืนแค่ 3 ฟิลด์นี้ (ชื่อผู้ใช้/
+      // ชื่อ-นามสกุล/บทบาท) ซึ่งฟอร์มมีครบทุกตัวอยู่แล้ว จึงได้ผลเหมือนโหลดใหม่ทุกประการ
+      const savedUser = { username: form.username.trim(), fullName: form.fullName, role: form.role };
+      setUsers((prev) => (modalMode === 'create'
+        ? [...prev, savedUser]
+        : prev.map((x) => (x.username === savedUser.username ? { ...x, ...savedUser } : x))));
     } catch (err) {
       Swal.fire('ข้อผิดพลาด', err.message || 'ไม่สามารถบันทึกข้อมูลได้', 'error');
     } finally {

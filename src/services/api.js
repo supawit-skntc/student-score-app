@@ -32,6 +32,13 @@ const RETRYABLE_ACTIONS = new Set([
   'addRecord', 'generateRecordPdf', 'ocrScan',
 ]);
 const MAX_ATTEMPTS = 3;
+// ⏱️ เวลารอสูงสุดต่อ 1 คำขอ (เฉพาะ action ใน RETRYABLE_ACTIONS ที่ลองใหม่ได้อย่างปลอดภัย)
+// — เดิมไม่มี timeout เลย บนเน็ตมือถือที่หลุดกลางทางแบบเงียบๆ (ไม่ error แค่ค้าง)
+// fetch จะรอไปเรื่อยๆ จนผู้ใช้เห็นหน้าจอหมุนไม่มีวันจบและไม่เกิดการลองใหม่อัตโนมัติ
+// เลย 60 วินาทีเผื่อ action ที่ช้าจริงๆ (สร้าง PDF/สแกนบัตรด้วย AI ใช้เวลาหลายวินาที)
+// ส่วน action เขียนข้อมูลที่ลองใหม่ไม่ได้ ไม่ตั้ง timeout เพราะถ้าตัดทิ้งกลางทางจะไม่รู้ว่า
+// เซิร์ฟเวอร์บันทึกไปแล้วหรือยัง
+const REQUEST_TIMEOUT_MS = 60000;
 const RETRY_DELAY_MS = 1200;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -108,8 +115,12 @@ const callAPIUncached = async (action, data = {}) => {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const isLastAttempt = attempt === maxAttempts;
 
+    const controller = maxAttempts > 1 ? new AbortController() : null;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS) : null;
+
     try {
       const response = await fetch(GAS_API_URL, {
+        signal: controller ? controller.signal : undefined,
         method: "POST",
         headers: {
           // ใช้ text/plain เพื่อหลีกเลี่ยงปัญหา CORS ใน Google Apps Script
@@ -125,6 +136,7 @@ const callAPIUncached = async (action, data = {}) => {
       });
 
       const text = await response.text();
+      if (timeoutId) clearTimeout(timeoutId);
 
       if (!response.ok) {
         // เก็บเนื้อหาดิบ (มักเป็นหน้า HTML ของ Google) ไว้ใน console สำหรับ
@@ -152,6 +164,7 @@ const callAPIUncached = async (action, data = {}) => {
 
       return result;
     } catch (err) {
+      if (timeoutId) clearTimeout(timeoutId);
       console.error(`API Call Error (action: ${action}, attempt ${attempt}/${maxAttempts}):`, err);
       if (!isLastAttempt) { await sleep(RETRY_DELAY_MS * attempt); continue; }
       return { status: "error", message: "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบอินเทอร์เน็ต" };

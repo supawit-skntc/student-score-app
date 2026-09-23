@@ -13,6 +13,11 @@ const CONFIG = {
   },
   FOLDER_ID: "1esVLkFHHqkWPSR1c4Z9K-je_3E5WLEF7",
   TEMPLATE_ID: "1O12nW9msC54n5Vk_ngaeMTKvaUNfpFGrWrQ3GoGSsNo",
+  // 🤖 ชื่อผู้ใช้งาน (username) ของบัญชีบอท RPA — ได้รับอนุญาตเรียก action ของบอท
+  // (getSyncQueue/updateSyncStatus/logRpaEvent/reportBotFailure) ได้โดยไม่ต้องเป็น
+  // แอดมิน ไม่ว่าบัญชีนั้นจะถูกตั้ง role ไว้เป็นอะไร (ดู requireBotOrAdmin_ ใน
+  // Utils.gs) — ถ้าตั้งชื่อบัญชีบอทเป็นอย่างอื่นนอกจาก rpa-bot ให้แก้ตรงนี้ด้วย
+  BOT_USERNAMES: ['rpa-bot'],
   // 📧 อีเมลรับการแจ้งเตือนอัตโนมัติเมื่อเซิร์ฟเวอร์เกิดข้อผิดพลาดที่ไม่คาดคิด
   // (ดู notifyAdminOfError_ ใน Service_Ops.gs) — ใส่อีเมลผู้ดูแลระบบที่นี่ เช่น
   // "admin@sktc.ac.th" ถ้าเว้นว่างไว้ ระบบจะไม่ส่งอีเมลแจ้งเตือนใดๆ (ปิดเงียบๆ)
