@@ -3,6 +3,9 @@ import { Loader2, UserPlus, Pencil, Trash2, X, Save, KeyRound, ShieldCheck, Eye 
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
 import { ALL_ROLES } from '../utils/permissions';
+import Pagination from '../components/ui/Pagination';
+
+const PAGE_SIZE = 20;
 
 const emptyForm = { username: '', fullName: '', role: 'ครูผู้สอน', password: '', email: '' };
 
@@ -22,6 +25,15 @@ export default function UserManagement() {
   const [form, setForm] = useState(emptyForm);
   const [changePassword, setChangePassword] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [page, setPage] = useState(1);
+
+  // ลบผู้ใช้จนหน้าปัจจุบันเกินหน้าสุดท้ายที่มีจริง (เช่น อยู่หน้า 3 แล้วลบจนเหลือ 2 หน้า)
+  // ให้ดึงกลับมาหน้าสุดท้าย ไม่งั้นค้างหน้าว่างและไม่มีปุ่มแบ่งหน้าให้กลับ (แบบเดียวกับ
+  // หน้ารายงาน — ดู Report.jsx)
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(users.length / PAGE_SIZE));
+    if (page > totalPages) setPage(totalPages);
+  }, [users.length, page]);
 
   useEffect(() => {
     fetchUsers();
@@ -167,7 +179,7 @@ export default function UserManagement() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {users.length > 0 ? users.map((u) => {
+              {users.length > 0 ? users.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((u) => {
                 const admin = roleTiers[u.role] === 'admin';
                 const seesAll = roleTiers[u.role] === 'full';
                 return (
@@ -209,6 +221,12 @@ export default function UserManagement() {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {!isLoading && users.length > 0 && (
+        <div className="mt-4">
+          <Pagination page={page} pageSize={PAGE_SIZE} total={users.length} onPageChange={setPage} />
         </div>
       )}
 
