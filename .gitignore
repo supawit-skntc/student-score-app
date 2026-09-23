@@ -14,17 +14,8 @@ dist-ssr
 
 # Secrets — never commit real credentials/API keys
 .env
-!.env.example
-
-# Old reference dumps / archives — not part of the app source
-/RMS_UI & Source_Code/
-/RMS_UI & Source_Code.rar
-/ออกแบบ UI ระบบใหม่.zip
-/main.py
-/UI โปรแกรมสมัยใหม่.zip
 
 # Runtime output from the RPA bot control panel (saved console logs) — not source
-/log_rpa_bot/
 rpa-bot/log_rpa_bot/
 
 # Python bytecode cache

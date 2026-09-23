@@ -45,8 +45,8 @@ Task Scheduler เรียก `run_bot.bat` ตรงๆ ไม่ผ่าน�
 - **ทดสอบ**: ดับเบิลคลิก `run_bot_dryrun.bat`
 - **รันจริง**: ดับเบิลคลิก `run_bot.bat`
 
-ไม่ต้องเปิด PowerShell พิมพ์ `$env:...` อีกเลย เพราะรหัสผ่านทั้งหมดเก็บไว้ในไฟล์
-`.env` ที่ตั้งครั้งเดียวจบ โปรแกรมจะอ่านไฟล์นั้นเองอัตโนมัติทุกครั้งที่รัน
+ไม่ต้องเปิด PowerShell พิมพ์ `$env:...` อีกเลย เพราะรหัสผ่านทั้งหมดเก็บไว้ใน Windows
+Credential Manager ที่ตั้งครั้งเดียวจบ โปรแกรมจะอ่านเองอัตโนมัติทุกครั้งที่รัน
 
 ## ภาพรวมการทำงาน
 
@@ -55,7 +55,7 @@ Task Scheduler เรียก `run_bot.bat` ตรงๆ ไม่ผ่าน�
                                           |
               ดับเบิลคลิก run_bot.bat (หรือ Task Scheduler รันให้อัตโนมัติ)
                                           |
-         บอท login เข้าเว็บแอป EDMS (อ่านรหัสผ่านจากไฟล์ .env) -> ได้ token
+         บอท login เข้าเว็บแอป EDMS (อ่านรหัสผ่านจาก Windows Credential Manager) -> ได้ token
                                           |
               ดึงคิว -> ทีละรายการ: login RMS -> ค้นหา -> เช็ก REF tag ซ้ำ
                         -> กรอกฟอร์ม -> บันทึก -> อัปเดตสถานะ + log ทันที
@@ -101,8 +101,7 @@ playwright install chromium
 ```
 
 ### 1. อัปเดต Google Apps Script
-วางเนื้อหาทั้ง 7 ไฟล์ (`Config.gs`, `Main.gs`, `Service_Auth.gs`, `Service_PDF.gs`,
-`Service_Records.gs`, `Service_Users.gs`, `Utils.gs`) ทับของเดิมใน Apps Script
+วางเนื้อหาทุกไฟล์ในโฟลเดอร์ `gas-backend-COMPLETE-v3/` (ทั้ง 11 ไฟล์) ทับของเดิมใน Apps Script
 Editor แล้วรัน `setupSyncColumns()` หนึ่งครั้ง จากนั้น **Deploy -> Manage
 deployments -> ไอคอนดินสอ -> เปลี่ยน Version เป็น "New version" -> Deploy**
 
@@ -111,8 +110,7 @@ deployments -> ไอคอนดินสอ -> เปลี่ยน Version �
 ช่อง (ชื่อผู้ใช้งาน/รหัสผ่านเว็บแอป EDMS และของ RMS จริง) แล้วกด "บันทึกการตั้งค่า"
 — รหัสผ่านจะถูกเก็บอย่างปลอดภัยไว้ใน Windows Credential Manager (เข้ารหัสโดย
 Windows เอง) ไม่ใช่ไฟล์ข้อความธรรมดา ไม่ต้องแก้ไฟล์ `.env` หรือตั้ง environment
-variable ใดๆ เองอีกเลย (ไฟล์ `.env.example` ในโฟลเดอร์นี้เป็นของเก่าที่เลิกใช้
-แล้ว ไม่ต้องสนใจ)
+variable ใดๆ เองอีกเลย (ไฟล์ตัวอย่าง `.env.example` เดิมเลิกใช้และถูกลบออกจากโปรเจกต์แล้ว)
 
 ### 3. สร้างบัญชีบอท 2 บัญชี (คนละระบบกัน)
 - ในเว็บแอป EDMS: login ด้วยบัญชี Admin -> "จัดการผู้ใช้งาน" -> เพิ่มบัญชี `rpa-bot`
