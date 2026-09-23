@@ -144,15 +144,16 @@ function processRecordTransaction(token, data) {
 // โดยไม่กระทบสิทธิ์การมองเห็น เพราะ cache เก็บแค่ "ข้อมูลดิบทุกแถว" การกรองว่า
 // ใครเห็นรายการไหน (ดู getMyRecords) ยังทำสดใหม่ทุกครั้งจาก session ปัจจุบัน
 //
-// ⚠️ CacheService จำกัดขนาดค่าต่อ 1 คีย์ไว้ที่ ~100KB — ถ้าข้อมูลใหญ่เกินนี้
-// (ชีตมีหลายพันแถว) จะข้ามการแคชไปเฉยๆ ไม่ error แค่ไม่ได้ประโยชน์จากแคชต่อ
+// ⚠️ CacheService จำกัดค่าต่อ 1 คีย์ไว้ที่ ~100KB "ไบต์" (ภาษาไทย 1 ตัวอักษร = 3
+// ไบต์) — ใช้ putChunkedCache_/getChunkedCache_ (Utils.gs) แบ่งเป็นหลายชิ้นแทนการ
+// เก็บก้อนเดียว รองรับได้ราว 1,500 แถว (เดิมเต็มที่ ~180 แถวแล้วแคชหยุดทำงานเงียบๆ
+// ทุกคำขอต้องอ่านทั้งชีตใหม่) เกินกว่านั้นจะข้ามการแคชไปเฉยๆ ไม่ error
 // ==========================================
 const RECORDS_CACHE_KEY = 'records_raw_rows_v1';
 const RECORDS_CACHE_TTL_SECONDS = 30;
 
 function readActiveRecordRows_() {
-  const cache = CacheService.getScriptCache();
-  const cached = cache.get(RECORDS_CACHE_KEY);
+  const cached = getChunkedCache_(RECORDS_CACHE_KEY);
   if (cached) {
     try {
       return JSON.parse(cached);
@@ -172,10 +173,7 @@ function readActiveRecordRows_() {
   }
 
   try {
-    const serialized = JSON.stringify(rows);
-    if (serialized.length < 95000) {
-      cache.put(RECORDS_CACHE_KEY, serialized, RECORDS_CACHE_TTL_SECONDS);
-    }
+    putChunkedCache_(RECORDS_CACHE_KEY, JSON.stringify(rows), RECORDS_CACHE_TTL_SECONDS);
   } catch (e) {
     // แคชพังไม่ควรทำให้ทั้งฟังก์ชันพังตาม — ปล่อยผ่าน ใช้ข้อมูลสดที่อ่านมาได้ตามปกติ
   }
@@ -184,7 +182,8 @@ function readActiveRecordRows_() {
 }
 
 // เรียกทันทีหลังบันทึก/แก้ไข/ลบรายการสำเร็จ กันไม่ให้เห็นข้อมูลเก่าค้างในแคช
-// นานถึง 30 วินาทีหลังเพิ่งมีการเปลี่ยนแปลงจริง
+// นานถึง 30 วินาทีหลังเพิ่งมีการเปลี่ยนแปลงจริง — ลบคีย์หลักอย่างเดียวพอ (ชิ้นที่
+// เหลือของรุ่นเดิมอ้างถึงไม่ได้อีก หมดอายุเองตาม TTL ดูคำอธิบายที่ putChunkedCache_)
 function invalidateRecordsCache_() {
   CacheService.getScriptCache().remove(RECORDS_CACHE_KEY);
 }

@@ -175,8 +175,7 @@ function deleteProbationRecord(token, id) {
 // ทั้งที่ข้อมูลทัณฑ์บนเองมีขนาดเล็กมาก รวมเป็นคำตอบเดียวตัดรอบที่ 2 ทิ้งไปได้เลย
 // ==========================================
 function getProbationByStudent_() {
-  const cache = CacheService.getScriptCache();
-  const cached = cache.get(PROBATION_CACHE_KEY);
+  const cached = getChunkedCache_(PROBATION_CACHE_KEY);
   if (cached) {
     try { return JSON.parse(cached); } catch (e) { /* อ่านแคชไม่ขึ้น อ่านจากชีตใหม่แทน */ }
   }
@@ -213,10 +212,7 @@ function getProbationByStudent_() {
   // ล่าสุดขึ้นก่อนในแต่ละคน (แถวในชีตเรียงจากเก่าไปใหม่ตามธรรมชาติของ appendRow)
   Object.keys(byStudent).forEach((id) => byStudent[id].reverse());
 
-  try {
-    const serialized = JSON.stringify(byStudent);
-    if (serialized.length < 95000) cache.put(PROBATION_CACHE_KEY, serialized, PROBATION_CACHE_TTL_SECONDS);
-  } catch (e) { /* แคชพังไม่ควรทำให้ฟังก์ชันหลักพังตาม */ }
+  putChunkedCache_(PROBATION_CACHE_KEY, JSON.stringify(byStudent), PROBATION_CACHE_TTL_SECONDS);
 
   return byStudent;
 }

@@ -9,15 +9,80 @@
 // ได้ JS Date object ไม่ใช่ string เดิม — ถ้าใครเผลอทำ String(dateObject) ตรงๆ
 // จะได้ข้อความยาวเฟะแบบ "Wed Sep 23 2026 00:00:00 GMT+0700 (Indochina Time)"
 // แทนวันที่อ่านง่าย (เจอบั๊กนี้จริงในชีต Probation)
+// อาร์เรย์ชื่อเดือนอยู่ระดับไฟล์ (สร้างครั้งเดียวตอนโหลด) — เดิมสร้างใหม่ทุกครั้ง
+// ที่เรียกฟังก์ชันนี้ ซึ่ง mapRowToRecord_ เรียกต่อ 1 แถว
+const THAI_MONTHS_SHORT_ = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+const THAI_MONTHS_LONG_ = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+
 function formatThaiDate_(rawDate, options) {
   if (!rawDate) return "";
-  const useLong = !!(options && options.long);
-  const shortMonths = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
-  const longMonths = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
   const d = new Date(rawDate);
   if (isNaN(d.getTime())) return String(rawDate);
-  const months = useLong ? longMonths : shortMonths;
+  const months = (options && options.long) ? THAI_MONTHS_LONG_ : THAI_MONTHS_SHORT_;
   return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear() + 543}`;
+}
+
+// ==========================================
+// 🗃️ แคชข้อมูลก้อนใหญ่แบบแบ่งเป็นหลายชิ้น — CacheService รับได้ ~100KB ต่อ 1 คีย์
+// ซึ่งนับเป็น "ไบต์" (ภาษาไทย 1 ตัวอักษร = 3 ไบต์) แต่โค้ดเดิมเช็กเพดานด้วยจำนวน
+// "ตัวอักษร" (< 95000) ทำให้ข้อมูลรายการตัดคะแนนที่วัดจริงได้ราว 566 ไบต์/แถว เต็ม
+// เพดานที่ประมาณ 180 แถว แล้ว cache.put พังเงียบๆ (โดน catch กลืน) ทุกคำขอต้อง
+// อ่านทั้งชีตใหม่โดยไม่มีสัญญาณเตือน — ตัวช่วยนี้แบ่งข้อมูลเป็นชิ้นละ 30000 ตัวอักษร
+// (สูงสุด ~90KB ต่อชิ้นแม้เป็นภาษาไทยล้วน) ได้สูงสุด 20 ชิ้น (~1,500 แถว) เกินกว่านั้น
+// คืน false ให้ผู้เรียกข้ามการแคชเหมือนเดิม
+//
+// ชิ้นแรกเก็บไว้ที่คีย์หลักพร้อมหัว "รหัสรุ่น|จำนวนชิ้น|" ส่วนชิ้นที่ 2 เป็นต้นไปใช้
+// คีย์ที่มีรหัสรุ่นต่อท้าย — ข้อมูลเล็กกว่า 30000 ตัวอักษรใช้ 1 RPC เท่าเดิม และการล้าง
+// แคช (cache.remove(key)) ทำที่คีย์หลักอย่างเดียวก็ครบ ชิ้นที่เหลือกลายเป็นของ
+// กำพร้าหมดอายุเองตาม TTL รหัสรุ่นกันเอาชิ้นจากคนละรุ่นมาต่อกันผิดๆ ถ้ามี 2 คำขอ
+// เขียนแคชชนกัน
+// ==========================================
+const CHUNK_CACHE_CHARS_ = 30000;
+const CHUNK_CACHE_MAX_CHUNKS_ = 20;
+
+function putChunkedCache_(key, str, ttlSeconds) {
+  try {
+    const n = Math.max(1, Math.ceil(str.length / CHUNK_CACHE_CHARS_));
+    if (n > CHUNK_CACHE_MAX_CHUNKS_) return false;
+    const gen = Utilities.getUuid().slice(0, 8);
+    const entries = {};
+    entries[key] = gen + '|' + n + '|' + str.slice(0, CHUNK_CACHE_CHARS_);
+    for (let i = 1; i < n; i++) {
+      entries[key + '_' + gen + '_' + i] = str.slice(i * CHUNK_CACHE_CHARS_, (i + 1) * CHUNK_CACHE_CHARS_);
+    }
+    CacheService.getScriptCache().putAll(entries, ttlSeconds);
+    return true;
+  } catch (e) {
+    return false; // แคชพังไม่ควรทำให้ฟังก์ชันหลักพังตาม
+  }
+}
+
+// คืนสตริงเต็มที่เคยเก็บไว้ หรือ null ถ้าไม่มี/ชิ้นใดชิ้นหนึ่งหมดอายุไปก่อน
+function getChunkedCache_(key) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const head = cache.get(key);
+    if (!head) return null;
+    const p1 = head.indexOf('|');
+    const p2 = head.indexOf('|', p1 + 1);
+    if (p1 < 0 || p2 < 0) return null;
+    const gen = head.slice(0, p1);
+    const n = parseInt(head.slice(p1 + 1, p2), 10);
+    const first = head.slice(p2 + 1);
+    if (n <= 1) return first;
+
+    const keys = [];
+    for (let i = 1; i < n; i++) keys.push(key + '_' + gen + '_' + i);
+    const rest = cache.getAll(keys);
+    const parts = [first];
+    for (let i = 0; i < keys.length; i++) {
+      if (rest[keys[i]] == null) return null;
+      parts.push(rest[keys[i]]);
+    }
+    return parts.join('');
+  } catch (e) {
+    return null;
+  }
 }
 
 function logAudit(user, action, targetId, status) {
@@ -65,8 +130,7 @@ const AUDIT_LOGS_CACHE_TTL_SECONDS = 30;
 function getAuditLogs(token) {
   requireAdmin(token);
 
-  const cache = CacheService.getScriptCache();
-  const cached = cache.get(AUDIT_LOGS_CACHE_KEY);
+  const cached = getChunkedCache_(AUDIT_LOGS_CACHE_KEY);
   if (cached) {
     try { return { status: "success", data: JSON.parse(cached) }; } catch (e) { /* อ่านแคชไม่ขึ้น อ่านจากชีตใหม่แทน */ }
   }
@@ -90,10 +154,7 @@ function getAuditLogs(token) {
   const MAX_ROWS = 500;
   const result = logs.slice(0, MAX_ROWS);
 
-  try {
-    const serialized = JSON.stringify(result);
-    if (serialized.length < 95000) cache.put(AUDIT_LOGS_CACHE_KEY, serialized, AUDIT_LOGS_CACHE_TTL_SECONDS);
-  } catch (e) { /* แคชพังไม่ควรทำให้ฟังก์ชันหลักพังตาม */ }
+  putChunkedCache_(AUDIT_LOGS_CACHE_KEY, JSON.stringify(result), AUDIT_LOGS_CACHE_TTL_SECONDS);
 
   return { status: "success", data: result };
 }
@@ -184,11 +245,31 @@ function createSession(user) {
   return token;
 }
 
+// 🧠 จำผลตรวจ session/rate limit ไว้ "ภายในคำขอเดียว" — doPost ใน Main.gs เรียก
+// requireSession ก่อนเข้า handler แล้ว handler ส่วนใหญ่ (getMyRecords, getOffenses,
+// getRpaStats, getAuditLogs, getUsersList, ทัณฑ์บน ฯลฯ) เรียกซ้ำอีกรอบ ทำให้เรียก
+// CacheService 6 ครั้งแทน 3 และนับ rate limit ซ้ำสองต่อ 1 คำขอ (เพดาน 120/นาที
+// เหลือจริงราว 60) — ตอนนี้ตรวจจริงครั้งเดียวต่อ token ที่เหลือคืนผลที่จำไว้
+//
+// ⚠️ ต้องเรียก resetRequestMemo_() ที่ต้น doPost เสมอ (ทำแล้วใน Main.gs) กัน
+// ตัวแปรระดับไฟล์ค้างข้ามคำขอถ้า Apps Script นำ runtime เดิมกลับมาใช้ — ไม่งั้น
+// token ที่หมดอายุ/logout ไปแล้วอาจยังผ่านได้จากค่าที่จำไว้ของคำขอก่อนหน้า
+let REQUEST_MEMO_ = { sessions: {}, rateChecked: {} };
+
+function resetRequestMemo_() {
+  REQUEST_MEMO_ = { sessions: {}, rateChecked: {} };
+}
+
 function getSession(token) {
   if (!token) return null;
+  if (Object.prototype.hasOwnProperty.call(REQUEST_MEMO_.sessions, token)) {
+    return REQUEST_MEMO_.sessions[token];
+  }
   const cache = CacheService.getScriptCache();
   const raw = cache.get('session_' + token);
-  return raw ? JSON.parse(raw) : null;
+  const session = raw ? JSON.parse(raw) : null;
+  REQUEST_MEMO_.sessions[token] = session;
+  return session;
 }
 
 // โยน Error ถ้าไม่ได้ login หรือ token หมดอายุ — ให้ doPost ใน Main.gs
@@ -198,7 +279,10 @@ function getSession(token) {
 function requireSession(token) {
   const session = getSession(token);
   if (!session) throw new Error('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
-  checkRateLimit_(token);
+  if (!REQUEST_MEMO_.rateChecked[token]) {
+    checkRateLimit_(token);
+    REQUEST_MEMO_.rateChecked[token] = true;
+  }
   return session;
 }
 
@@ -230,6 +314,7 @@ function requireDisciplineStaff_(token) {
 function revokeSession(token) {
   if (token) {
     CacheService.getScriptCache().remove('session_' + token);
+    delete REQUEST_MEMO_.sessions[token];
   }
   return { status: "success", message: "ออกจากระบบเรียบร้อยแล้ว" };
 }

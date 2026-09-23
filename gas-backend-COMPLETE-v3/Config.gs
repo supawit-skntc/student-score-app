@@ -1,5 +1,16 @@
+// 🐢 เดิมเขียน SPREADSHEET_ID: SpreadsheetApp.getActiveSpreadsheet().getId() ตรงๆ
+// ในออบเจกต์ ซึ่งรันตอน "โหลดสคริปต์" ทุกครั้งที่มีคำขอเข้ามา (ทุก doPost/trigger)
+// เรียกบริการ Spreadsheet 1 รอบเสมอแม้คำขอนั้นไม่ได้ใช้ ID นี้เลย (เช่น อ่าน
+// รายการตัดคะแนน) — ตอนนี้เป็น getter ที่เรียกเมื่อมีคนใช้จริงเท่านั้น และจำผลไว้
+// ภายในการรันนั้น ค่าที่ได้เหมือนเดิมทุกประการ ผู้เรียก CONFIG.SPREADSHEET_ID
+// เดิมไม่ต้องแก้อะไร
+let SPREADSHEET_ID_MEMO_ = null;
+
 const CONFIG = {
-  SPREADSHEET_ID: SpreadsheetApp.getActiveSpreadsheet().getId(),
+  get SPREADSHEET_ID() {
+    if (!SPREADSHEET_ID_MEMO_) SPREADSHEET_ID_MEMO_ = SpreadsheetApp.getActiveSpreadsheet().getId();
+    return SPREADSHEET_ID_MEMO_;
+  },
   FOLDER_ID: "1esVLkFHHqkWPSR1c4Z9K-je_3E5WLEF7",
   TEMPLATE_ID: "1O12nW9msC54n5Vk_ngaeMTKvaUNfpFGrWrQ3GoGSsNo",
   // 📧 อีเมลรับการแจ้งเตือนอัตโนมัติเมื่อเซิร์ฟเวอร์เกิดข้อผิดพลาดที่ไม่คาดคิด

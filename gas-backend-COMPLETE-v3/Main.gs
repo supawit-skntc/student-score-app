@@ -1,5 +1,8 @@
 function doPost(e) {
   let action = null; // ประกาศไว้นอก try เพื่อให้ catch ด้านล่างอ้างถึงได้ (ใส่ลง log แจ้งเตือนได้ว่า error เกิดตอนเรียก action ไหน)
+  // ล้างค่าที่จำไว้ของ session/rate limit ก่อนทุกคำขอ (ดูคำอธิบายที่ REQUEST_MEMO_
+  // ใน Utils.gs) กันค่าค้างข้ามคำขอถ้า Apps Script นำ runtime เดิมกลับมาใช้
+  resetRequestMemo_();
   try {
     const requestBody = JSON.parse(e.postData.contents);
     action = requestBody.action;
