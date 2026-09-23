@@ -29,6 +29,16 @@ function probationTone(count) {
   return 'notice';
 }
 
+// ตัดเลขห้องออกจาก displayLevel ("ปวช. ปี 2/2" -> "ปวช.2") ให้จัดกลุ่มตามชั้นปี
+// เฉยๆ แทนห้อง — ฟีดแบ็กจากผู้ใช้งานจริง: แบ่งตามห้องแยกย่อยเกินไป จำนวนหมวดจะ
+// เยอะโดยไม่จำเป็นถ้านักเรียนที่ทำทัณฑ์บนกระจายกันหลายห้อง ทั้งที่ปกติดูภาพรวม
+// แค่ระดับชั้นปีก็พอแล้ว — ถ้ารูปแบบไม่ตรงตามที่คาด (เช่น "ไม่ระบุระดับชั้น") ใช้
+// ค่าเดิมทั้งดุ้นแทนไม่ให้พัง
+function probationGroupKey(levelStr) {
+  const match = String(levelStr || '').match(/^(.*?)\s*ปี\s*(\d+)\/\d+$/);
+  return match ? `${match[1]}${match[2]}` : (levelStr || 'ไม่ระบุระดับชั้น');
+}
+
 // รับ initialStudentId เผื่อมาจากปุ่ม "ดูประวัติ" ในหน้า Dashboard/Report — ถ้าไม่มี
 // ก็ใช้เป็นหน้าค้นหาอิสระได้ตามปกติ
 export default function StudentProfile({ initialStudentId }) {
@@ -229,7 +239,7 @@ export default function StudentProfile({ initialStudentId }) {
   {
     const byLevel = new Map();
     probationStudents.forEach((s) => {
-      const key = s.level || 'ไม่ระบุระดับชั้น';
+      const key = probationGroupKey(s.level);
       if (!byLevel.has(key)) byLevel.set(key, []);
       byLevel.get(key).push(s);
     });
