@@ -275,11 +275,24 @@ export default function Report({ onViewStudent }) {
     return matchesSearch && matchesLevel && matchesMajor && matchesFrom && matchesTo && matchesHighRisk;
   });
 
-  // ⏮️ กลับไปหน้า 1 ทุกครั้งที่ผลลัพธ์เปลี่ยน (ค้นหา/กรองใหม่) — กันเผลอค้างอยู่
-  // หน้า 3 แล้วเจอ "ไม่พบข้อมูล" ทั้งที่จริงๆ มีข้อมูลอยู่แค่หน้าอื่น
+  // ⏮️ กลับไปหน้า 1 ทุกครั้งที่ค้นหา/กรองใหม่ — กันเผลอค้างอยู่หน้า 3 แล้วเจอ "ไม่
+  // พบข้อมูล" ทั้งที่จริงๆ มีข้อมูลอยู่แค่หน้าอื่น
   useEffect(() => {
     setPage(1);
   }, [searchTerm, filterLevel, filterMajor, filterFrom, filterTo, filterHighRisk]);
+
+  // 🐛 ลบรายการจนหน้าปัจจุบันว่างเปล่าไปเลย (เช่น อยู่หน้า 3 แล้วลบจนเหลือรายการ
+  // ไม่พอเต็มหน้า) เดิมไม่มีการปรับหน้าตาม ผลคือเจอตารางว่างเปล่าแต่หัวข้อบอกว่า
+  // "พบ N รายการ" (N > 0) และ Pagination.jsx ก็ไม่โชว์ปุ่มอะไรเลยเพราะ totalPages
+  // ลดลงจนดูเหมือนไม่ต้องแบ่งหน้าแล้ว (เช่นเหลือ 5 รายการ) ทำให้ติดอยู่หน้าว่างๆ
+  // กลับไม่ได้เลยนอกจากพิมพ์ค้นหา/รีเฟรชหน้าเว็บเอง — คนละเงื่อนไขกับด้านบน (ด้าน
+  // บน "รีเซ็ต" ไปหน้า 1 เสมอตอนค้นหาใหม่ ส่วนอันนี้แค่ "ดึงกลับ" มาไม่ให้เกินหน้า
+  // สุดท้ายที่มีจริงเท่านั้น ไม่ควรรีเซ็ตไปหน้า 1 ทุกครั้งที่ลบ เดี๋ยวคนกำลังไล่ดู
+  // รายการอยู่หน้า 3 จะหลุดกลับไปหน้า 1 โดยไม่จำเป็น)
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(filteredRecords.length / PAGE_SIZE));
+    if (page > totalPages) setPage(totalPages);
+  }, [filteredRecords.length, page]);
 
   const pageRecords = filteredRecords.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 

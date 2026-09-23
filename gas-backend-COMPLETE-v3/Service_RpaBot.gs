@@ -137,6 +137,9 @@ function reportBotFailure(token, message) {
 // เก็บแค่สถานะล่าสุด) มีเวลาที่ใช้ต่อรายการด้วย ใช้เป็นข้อมูลเปรียบเทียบ
 // ประสิทธิภาพสำหรับงานวิจัยได้โดยตรง
 // ==========================================
+const RPA_STATS_CACHE_KEY = 'rpa_stats_v1';
+const RPA_STATS_CACHE_TTL_SECONDS = 30;
+
 function logRpaEvent(payload) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName("RPA_Log");
@@ -156,6 +159,8 @@ function logRpaEvent(payload) {
     payload.message || "",
     payload.durationSeconds || ""
   ]);
+  // 🔄 ล้างแคชสถิติ RPA (ดู getRpaStats ด้านล่าง) ทันทีที่มีการรันใหม่บันทึกเข้ามา
+  CacheService.getScriptCache().remove(RPA_STATS_CACHE_KEY);
 
   return { status: "success" };
 }
@@ -183,15 +188,28 @@ function getRpaStats(token) {
   }
 
   const empty = {
-    pendingCount, hasLogs: false, totalRuns: 0, lastRunAt: "",
+    hasLogs: false, totalRuns: 0, lastRunAt: "",
     successRate: null, avgDurationSeconds: null, recentDurations: []
   };
 
+  // 🚀 แคชส่วนที่มาจากชีต RPA_Log ไว้ 30 วินาที (แยกจาก pendingCount ด้านบนซึ่งสด
+  // อยู่แล้วจาก readActiveRecordRows_) — ชีตนี้สะสมแถวเพิ่มขึ้นทุกครั้งที่บอทรัน
+  // (อาจหลายสิบ/หลายร้อยครั้งต่อวัน) แต่เดิมอ่านทั้งชีตใหม่ทุกครั้งที่เปิดแผงควบคุม
+  // ไม่มีแคชเลย ยิ่งบอทรันมานานยิ่งช้าลงเรื่อยๆ
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(RPA_STATS_CACHE_KEY);
+  if (cached) {
+    try {
+      const logStats = JSON.parse(cached);
+      return { status: "success", data: Object.assign({ pendingCount: pendingCount }, logStats) };
+    } catch (e) { /* อ่านแคชไม่ขึ้น อ่านจากชีตใหม่แทน */ }
+  }
+
   const logSheet = ss.getSheetByName("RPA_Log");
-  if (!logSheet) return { status: "success", data: empty };
+  if (!logSheet) return { status: "success", data: Object.assign({ pendingCount: pendingCount }, empty) };
 
   const rows = logSheet.getDataRange().getValues().slice(1); // ตัดหัวตาราง
-  if (rows.length === 0) return { status: "success", data: empty };
+  if (rows.length === 0) return { status: "success", data: Object.assign({ pendingCount: pendingCount }, empty) };
 
   let successCount = 0;
   let durationSum = 0;
@@ -215,16 +233,19 @@ function getRpaStats(token) {
     .map((row) => parseFloat(row[6]))
     .filter((n) => Number.isFinite(n));
 
-  return {
-    status: "success",
-    data: {
-      pendingCount,
-      hasLogs: true,
-      totalRuns: rows.length,
-      lastRunAt,
-      successRate: Math.round((successCount / rows.length) * 100),
-      avgDurationSeconds: durationCount ? Math.round((durationSum / durationCount) * 10) / 10 : null,
-      recentDurations,
-    }
+  const logStats = {
+    hasLogs: true,
+    totalRuns: rows.length,
+    lastRunAt,
+    successRate: Math.round((successCount / rows.length) * 100),
+    avgDurationSeconds: durationCount ? Math.round((durationSum / durationCount) * 10) / 10 : null,
+    recentDurations,
   };
+
+  try {
+    const serialized = JSON.stringify(logStats);
+    if (serialized.length < 95000) cache.put(RPA_STATS_CACHE_KEY, serialized, RPA_STATS_CACHE_TTL_SECONDS);
+  } catch (e) { /* แคชพังไม่ควรทำให้ฟังก์ชันหลักพังตาม */ }
+
+  return { status: "success", data: Object.assign({ pendingCount: pendingCount }, logStats) };
 }

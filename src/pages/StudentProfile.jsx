@@ -82,6 +82,12 @@ export default function StudentProfile({ initialStudentId }) {
       const result = await callAPI('getRecords', {});
       if (result.status === 'success') {
         setRecords(result.data || []);
+        // 🚀 probationByStudent มากับคำตอบเดียวกันนี้แล้ว (ดู getRecords ใน
+        // Service_Records.gs) ไม่ต้องยิง getProbationStatus แยกตอนโหลดหน้าอีก
+        // ต่อไป — ลดจาก 2 round-trip เหลือ 1 ทุกครั้งที่เปิด/โพลหน้านี้ (ยังคง
+        // เรียก fetchProbationStatus() แยกได้อยู่ ใช้ตอนอยากรีเฟรชป้ายทันทีหลัง
+        // เพิ่ม/แก้ไข/ลบทัณฑ์บนโดยไม่ต้องโหลดรายการตัดคะแนนทั้งหมดซ้ำ)
+        if (result.probationByStudent) setProbationByStudent(result.probationByStudent);
       } else if (showSpinner) {
         Swal.fire('ข้อผิดพลาด', result.message || 'ไม่สามารถดึงข้อมูลได้', 'error');
       }
@@ -108,7 +114,6 @@ export default function StudentProfile({ initialStudentId }) {
   // โพลนี้ไม่โชว์ spinner เต็มจอ/ไม่เด้ง error (showSpinner=false)
   useEffect(() => {
     fetchRecords();
-    fetchProbationStatus();
     const stored = localStorage.getItem('currentUser');
     if (stored) setCurrentUser(JSON.parse(stored));
 
@@ -468,7 +473,10 @@ export default function StudentProfile({ initialStudentId }) {
             ) : (
               <div className="flex flex-col gap-2.5">
                 {selectedProbation.map((p, i) => (
-                  <div key={i} className="flex items-center justify-between gap-3 rounded-[13px] bg-bad-bg/50 px-3.5 py-2.5">
+                  // key: p.id เมื่อมี (รายการใหม่ทุกรายการมี) — fallback ไปที่ index
+                  // เฉพาะรายการเก่าก่อนมีคอลัมน์ id (ดู findProbationRowIndexById_
+                  // ใน Service_Probation.gs) กันแก้ไข/ลบแล้ว React จับคู่แถวผิดตัว
+                  <div key={p.id || i} className="flex items-center justify-between gap-3 rounded-[13px] bg-bad-bg/50 px-3.5 py-2.5">
                     <div className="min-w-0">
                       <p className="text-[13.5px] font-semibold text-ink">{p.displayDate || 'ไม่ระบุวันที่'}</p>
                       {p.note && <p className="mt-0.5 text-xs text-ink-mute truncate">{p.note}</p>}

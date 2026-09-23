@@ -31,14 +31,36 @@ function setupProbationSheet() {
   Logger.log("สร้างชีต Probation เรียบร้อยแล้ว");
 }
 
+// รันครั้งเดียวจาก Apps Script Editor (เลือกฟังก์ชันนี้แล้วกด Run) เพื่อเติม
+// "รหัสรายการ" (คอลัมน์ G) ให้แถวเก่าที่บันทึกไว้ก่อนมีคอลัมน์นี้ — ไม่งั้นแถวพวก
+// นั้นจะแก้ไข/ลบผ่านหน้าเว็บไม่ได้ตลอดไป (ดูคำอธิบายที่ findProbationRowIndexById_
+// ด้านล่าง) ปลอดภัยที่จะรันซ้ำได้เสมอ (ข้ามแถวที่มีรหัสอยู่แล้ว ไม่สร้างซ้ำ)
+function backfillProbationIds_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Probation");
+  if (!sheet) {
+    Logger.log("ยังไม่มีชีต Probation — ไม่มีอะไรให้เติม");
+    return;
+  }
+  const lastRow = sheet.getLastRow();
+  let filled = 0;
+  for (let row = 2; row <= lastRow; row++) {
+    const cell = sheet.getRange(row, 7);
+    if (String(cell.getValue() || '').trim()) continue; // มีรหัสอยู่แล้ว ข้าม
+    cell.setValue(Utilities.getUuid());
+    filled++;
+  }
+  invalidateProbationCache_();
+  Logger.log('เติมรหัสรายการให้แถวเก่าเรียบร้อยแล้ว ' + filled + ' แถว');
+}
+
 // หาแถวจริงในชีต (เลขแถว 1-indexed) จาก "รหัสรายการ" คอลัมน์ G — ใช้กับทั้งแก้ไข
 // และลบ สแกนหาใหม่ทุกครั้งที่เรียก (ไม่แคชเลขแถว) เพราะถ้าลบแถวอื่นไปก่อนหน้านี้
 // เลขแถวของแถวที่เหลือจะเลื่อน แคชไว้แล้วจะผิดได้ — แบบเดียวกับ
 // findRecordRowIndexById_ ใน Service_Records.gs (คนละไฟล์กัน หลักการเดียวกัน)
 //
 // ⚠️ แถวที่บันทึกไว้ "ก่อน" ที่จะมีคอลัมน์นี้ (ของเก่าก่อนอัปเดตฟีเจอร์แก้ไข/ลบ)
-// จะไม่มีรหัสรายการเลย หาไม่เจอ แก้ไข/ลบผ่านหน้าเว็บไม่ได้ — ต้องไปแก้/ลบในชีต
-// ด้วยมือแทนสำหรับแถวเก่ากลุ่มนี้เท่านั้น แถวใหม่ที่บันทึกหลังจากนี้ไม่มีปัญหา
+// จะไม่มีรหัสรายการเลย หาไม่เจอ แก้ไข/ลบผ่านหน้าเว็บไม่ได้ — รันฟังก์ชัน
+// backfillProbationIds_() ด้านบนครั้งเดียวจาก Apps Script Editor เพื่อแก้ปัญหานี้
 function findProbationRowIndexById_(sheet, id) {
   const idStr = String(id || '').trim();
   if (!idStr) return null;
@@ -143,23 +165,24 @@ function deleteProbationRecord(token, id) {
 }
 
 // ==========================================
-// ส่งประวัติทัณฑ์บนของทุกคนกลับไปให้เว็บครั้งเดียว (map รหัสนักเรียน -> รายการ
-// ทัณฑ์บนทั้งหมดของคนนั้น เรียงล่าสุดก่อน) แทนที่จะให้เว็บมาถามทีละคน — ข้อมูลนี้
-// ไม่เยอะ (นักเรียนส่วนน้อยเท่านั้นที่ทำทัณฑ์บน) เปิดให้ผู้ใช้งานที่ login แล้วทุก
-// คนเรียกได้ (ไม่ใช่แค่งานปกครอง) เพราะแค่ "ดู" ป้ายนี้ในหน้าประวัตินักเรียน ไม่ใช่
-// ข้อมูลอ่อนไหวเท่าการบันทึกทัณฑ์บนใหม่ (ซึ่งจำกัดสิทธิ์ผ่าน addProbationRecord แล้ว)
+// สร้าง map รหัสนักเรียน -> รายการทัณฑ์บนทั้งหมดของคนนั้น (เรียงล่าสุดก่อน) — แยก
+// ออกมาจาก getProbationStatus() เดิม เพื่อให้ getRecords() (Service_Records.gs)
+// เรียกใช้ตัวเดียวกันนี้ได้โดยตรง แนบผลลัพธ์ไปในคำตอบเดียวกันเลย แทนที่จะให้ฝั่ง
+// เว็บต้องยิง action "getProbationStatus" แยกอีกรอบ — ก่อนหน้านี้ Dashboard.jsx/
+// StudentProfile.jsx เรียกทั้ง getRecords และ getProbationStatus พร้อมกันทุกครั้ง
+// ที่เปิดหน้า ทำให้ต้องรอ round-trip ไป Apps Script ถึง 2 รอบ (แต่ละรอบมีต้นทุน
+// คงที่ราว 2 วินาทีต่อครั้งไม่ว่าข้อมูลจะเยอะแค่ไหนก็ตาม — ดูคอมเมนต์ใน api.js)
+// ทั้งที่ข้อมูลทัณฑ์บนเองมีขนาดเล็กมาก รวมเป็นคำตอบเดียวตัดรอบที่ 2 ทิ้งไปได้เลย
 // ==========================================
-function getProbationStatus(token) {
-  requireSession(token);
-
+function getProbationByStudent_() {
   const cache = CacheService.getScriptCache();
   const cached = cache.get(PROBATION_CACHE_KEY);
   if (cached) {
-    try { return { status: "success", data: JSON.parse(cached) }; } catch (e) { /* อ่านแคชไม่ขึ้น อ่านจากชีตใหม่แทน */ }
+    try { return JSON.parse(cached); } catch (e) { /* อ่านแคชไม่ขึ้น อ่านจากชีตใหม่แทน */ }
   }
 
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Probation");
-  if (!sheet) return { status: "success", data: {} };
+  if (!sheet) return {};
 
   const data = sheet.getDataRange().getValues();
   const byStudent = {};
@@ -195,5 +218,15 @@ function getProbationStatus(token) {
     if (serialized.length < 95000) cache.put(PROBATION_CACHE_KEY, serialized, PROBATION_CACHE_TTL_SECONDS);
   } catch (e) { /* แคชพังไม่ควรทำให้ฟังก์ชันหลักพังตาม */ }
 
-  return { status: "success", data: byStudent };
+  return byStudent;
+}
+
+// เปิดให้เรียกแยกได้เองด้วย (ใช้ตอนแก้ไข/ลบ/เพิ่มทัณฑ์บนแล้วอยากรีเฟรชป้ายทันที
+// โดยไม่ต้องโหลดรายการตัดคะแนนทั้งหมดซ้ำ — ดู onSaved ใน Dashboard.jsx/
+// StudentProfile.jsx) เปิดให้ผู้ใช้งานที่ login แล้วทุกคนเรียกได้ (ไม่ใช่แค่งาน
+// ปกครอง) เพราะแค่ "ดู" ป้ายนี้ในหน้าประวัตินักเรียน ไม่ใช่ข้อมูลอ่อนไหวเท่าการ
+// บันทึกทัณฑ์บนใหม่ (ซึ่งจำกัดสิทธิ์ผ่าน addProbationRecord แล้ว)
+function getProbationStatus(token) {
+  requireSession(token);
+  return { status: "success", data: getProbationByStudent_() };
 }

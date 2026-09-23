@@ -65,6 +65,12 @@ export default function Dashboard({ onViewStudent }) {
         if (cancelled) return;
         if (result.status === 'success') {
           setRecords(result.data || []);
+          // 🚀 probationByStudent มากับคำตอบเดียวกันนี้แล้ว (ดู getRecords ใน
+          // Service_Records.gs) ไม่ต้องยิง getProbationStatus แยกตอนโหลดหน้าอีก
+          // ต่อไป — ลดจาก 2 round-trip เหลือ 1 ทุกครั้งที่เปิด/โพลหน้านี้ (ยังคง
+          // เรียก fetchProbationStatus() แยกได้อยู่ ใช้ตอนอยากรีเฟรชป้ายทันทีหลัง
+          // เพิ่ม/แก้ไข/ลบทัณฑ์บนโดยไม่ต้องโหลดรายการตัดคะแนนทั้งหมดซ้ำ)
+          if (result.probationByStudent) setProbationByStudent(result.probationByStudent);
         } else if (showSpinner) {
           Swal.fire('ข้อผิดพลาด', result.message || 'ไม่สามารถดึงข้อมูลได้', 'error');
         }
@@ -78,7 +84,6 @@ export default function Dashboard({ onViewStudent }) {
     };
 
     loadRecords(true);
-    fetchProbationStatus();
     const intervalId = setInterval(() => loadRecords(false), 45000);
 
     const stored = localStorage.getItem('currentUser');

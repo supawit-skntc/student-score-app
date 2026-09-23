@@ -283,7 +283,23 @@ function mapRowToRecord_(row) {
 function getRecords() {
   const rows = readActiveRecordRows_();
   if (rows === null) return { status: "error", message: "ไม่พบแผ่นงานข้อมูลระบบ" };
-  return { status: "success", data: rows.map(mapRowToRecord_).reverse() };
+  // 🚀 แนบ probationByStudent (Service_Probation.gs) มาในคำตอบเดียวกันเลย — เดิม
+  // Dashboard.jsx/StudentProfile.jsx เรียก getRecords + getProbationStatus แยก
+  // กันทุกครั้งที่เปิดหน้า ทำให้ต้องรอ round-trip ไป Apps Script 2 รอบ (รอบละ ~2
+  // วินาทีไม่ว่าข้อมูลจะเยอะแค่ไหน) ดูเหตุผลเต็มที่ getProbationByStudent_()
+  //
+  // 🛡️ ครอบ try/catch แยกไว้ต่างหาก — ถ้าชีต Probation มีปัญหา (เช่นโดนแก้ไข
+  // ด้วยมือจนข้อมูลผิดรูป หรือ Google เกิดโควตาแปลกๆ ชั่วคราว) ต้องไม่ทำให้รายการ
+  // ตัดคะแนนทั้งหมด (ข้อมูลหลักของระบบ) พลอยโหลดไม่ขึ้นไปด้วย — คนละความเสี่ยงกัน
+  // เดิม (ตอนยังเรียกแยก action กัน) ปัญหาที่ชีต Probation กระทบแค่ป้ายทัณฑ์บน
+  // เท่านั้น ไม่เคยทำให้หน้าแผงควบคุม/รายงาน/ประวัตินักเรียนล่มไปด้วยทั้งหน้า
+  let probationByStudent = {};
+  try {
+    probationByStudent = getProbationByStudent_();
+  } catch (e) {
+    console.error('โหลดข้อมูลทัณฑ์บนไม่สำเร็จ (ไม่กระทบรายการตัดคะแนนหลัก): ' + e);
+  }
+  return { status: "success", data: rows.map(mapRowToRecord_).reverse(), probationByStudent: probationByStudent };
 }
 
 // ==========================================

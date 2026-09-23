@@ -24,6 +24,10 @@ function logAudit(user, action, targetId, status) {
   try {
     const sheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName("Audit_Logs");
     sheet.appendRow([new Date().toISOString(), user, action, targetId, status]);
+    // 🔄 ล้างแคช getAuditLogs() ทันที (ดูด้านล่าง) — logAudit ถูกเรียกจากแทบทุก
+    // action ที่เขียนข้อมูล เป็นจุดเดียวที่คุมทุกการเขียนลงชีตนี้อยู่แล้ว จึงล้าง
+    // แคชที่นี่ที่เดียวได้ครบ ไม่ต้องไปเพิ่มทีละจุดที่เรียก logAudit
+    CacheService.getScriptCache().remove(AUDIT_LOGS_CACHE_KEY);
   } catch (e) {
     console.error("Audit Log Error: " + e);
   }
@@ -48,9 +52,24 @@ function sanitizeForSheetCell_(value) {
 // เดิมข้อมูลนี้บันทึกไว้ตั้งแต่แรกแล้ว แต่ไม่มี UI ให้ดู ต้องเปิด Google Sheet เอง
 // จำกัดจำนวนแถวที่ส่งกลับไว้ (ล่าสุดก่อน) กันไม่ให้ payload ใหญ่เกินไปเมื่อสะสม
 // นานๆ เข้า
+//
+// 🚀 แคชผลลัพธ์ไว้ 30 วินาที (แบบเดียวกับ readActiveRecordRows_ ใน
+// Service_Records.gs / getProbationByStudent_ ใน Service_Probation.gs) — ชีต
+// Audit_Logs สะสมแถวเพิ่มขึ้นเรื่อยๆ ไม่มีสิ้นสุด (ทุกการสร้าง/แก้/ลบทั้งรายการ
+// ตัดคะแนน/ทัณฑ์บน/ผู้ใช้งาน เขียนลงที่นี่หมด) ไม่แคชไว้เลยจะยิ่งช้าลงเรื่อยๆ ตาม
+// อายุการใช้งานระบบ ต่างจาก getRecords ที่แคชไว้แล้วตั้งแต่แรก
 // ==========================================
+const AUDIT_LOGS_CACHE_KEY = 'audit_logs_v1';
+const AUDIT_LOGS_CACHE_TTL_SECONDS = 30;
+
 function getAuditLogs(token) {
   requireAdmin(token);
+
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(AUDIT_LOGS_CACHE_KEY);
+  if (cached) {
+    try { return { status: "success", data: JSON.parse(cached) }; } catch (e) { /* อ่านแคชไม่ขึ้น อ่านจากชีตใหม่แทน */ }
+  }
 
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Audit_Logs");
   if (!sheet) return { status: "success", data: [] }; // ยังไม่เคยมีการบันทึกเหตุการณ์ใดเลย
@@ -69,7 +88,14 @@ function getAuditLogs(token) {
 
   logs.reverse(); // ล่าสุดขึ้นก่อน
   const MAX_ROWS = 500;
-  return { status: "success", data: logs.slice(0, MAX_ROWS) };
+  const result = logs.slice(0, MAX_ROWS);
+
+  try {
+    const serialized = JSON.stringify(result);
+    if (serialized.length < 95000) cache.put(AUDIT_LOGS_CACHE_KEY, serialized, AUDIT_LOGS_CACHE_TTL_SECONDS);
+  } catch (e) { /* แคชพังไม่ควรทำให้ฟังก์ชันหลักพังตาม */ }
+
+  return { status: "success", data: result };
 }
 
 // ==========================================
