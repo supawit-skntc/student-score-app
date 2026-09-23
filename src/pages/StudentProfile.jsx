@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Search, FileText, UserRound, Inbox, Trash2 } from 'lucide-react';
+import { Loader2, Search, FileText, UserRound, Inbox, Trash2, ShieldAlert, Plus } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
 import { statusForPoints } from '../data/thresholds';
 import { academicYearOf, currentAcademicYear } from '../data/academicYear';
-import { isAdmin } from '../utils/permissions';
+import { isAdmin, canViewAllRecords } from '../utils/permissions';
 import { parsePoints } from '../utils/points';
 import { escapeHtml } from '../utils/html';
+import ProbationModal from '../components/ProbationModal';
 
 // จำกัดจำนวนชิปที่แสดงพร้อมกัน — ถ้าโรงเรียนมีนักเรียนโดนตัดคะแนนหลายร้อยคน
 // (ไม่ใช่แค่ไม่กี่คนซ้ำๆ เหมือนข้อมูลตัวอย่างตอนออกแบบ) รายการจะยาวจนรกจอ ต้อง
@@ -22,6 +23,18 @@ export default function StudentProfile({ initialStudentId }) {
   const [selectedId, setSelectedId] = useState(initialStudentId || null);
   const [currentUser, setCurrentUser] = useState(null);
   const admin = isAdmin(currentUser);
+  // งานปกครอง (แอดมิน + กลุ่มเห็นทุกรายการ) เท่านั้นที่บันทึกทัณฑ์บนใหม่ได้ — ดู
+  // requireDisciplineStaff_ ใน Utils.gs ฝั่งเซิร์ฟเวอร์ที่บังคับสิทธิ์นี้จริง ที่นี่
+  // แค่ซ่อน/โชว์ปุ่มเป็น UI เท่านั้น
+  const canManageProbation = canViewAllRecords(currentUser);
+
+  // สถานะทัณฑ์บน — เก็บแยกจากคะแนนสะสม (ชีต Probation คนละชีตกับ Records) เพราะ
+  // ทัณฑ์บนไม่ถูกรีเซ็ตไปกับคะแนนตอนขึ้นปีการศึกษาใหม่ (ต่างจากคะแนนสะสมด้านบน
+  // ที่ยังรีเซ็ตทุกปีตามปกติ) — map รหัสนักเรียน -> รายการทัณฑ์บนทั้งหมดของคนนั้น
+  // การ "บันทึกใหม่" ใช้ ProbationModal ตัวเดียวกับหน้าแดชบอร์ด (ดูคำอธิบายที่
+  // src/components/ProbationModal.jsx) ไม่เขียนฟอร์มแยกซ้ำที่นี่อีก
+  const [probationByStudent, setProbationByStudent] = useState({});
+  const [addingProbationFor, setAddingProbationFor] = useState(null); // { studentId, studentName } | null
 
   const fetchRecords = async (showSpinner = true) => {
     if (showSpinner) setIsLoading(true);
@@ -39,6 +52,15 @@ export default function StudentProfile({ initialStudentId }) {
     }
   };
 
+  const fetchProbationStatus = async () => {
+    try {
+      const result = await callAPI('getProbationStatus', {});
+      if (result.status === 'success') setProbationByStudent(result.data || {});
+    } catch {
+      // เงียบไว้ — ไม่ให้ป้ายทัณฑ์บนที่ดึงไม่สำเร็จไปรบกวนหน้าประวัติหลัก
+    }
+  };
+
   // 🔄 โพลรีเฟรชพื้นหลังทุก 45 วิ (แพตเทิร์นเดียวกับ Dashboard.jsx/Report.jsx) —
   // เดิมหน้านี้ดึงข้อมูลแค่ตอนเปิดหน้าครั้งเดียว ถ้าเปิดค้างไว้ดูประวัตินักเรียน
   // คนหนึ่งระหว่างที่ PDF ของรายการที่เพิ่งบันทึกใหม่กำลังสร้างเสร็จเบื้องหลัง จะ
@@ -46,6 +68,7 @@ export default function StudentProfile({ initialStudentId }) {
   // โพลนี้ไม่โชว์ spinner เต็มจอ/ไม่เด้ง error (showSpinner=false)
   useEffect(() => {
     fetchRecords();
+    fetchProbationStatus();
     const stored = localStorage.getItem('currentUser');
     if (stored) setCurrentUser(JSON.parse(stored));
 
@@ -144,6 +167,10 @@ export default function StudentProfile({ initialStudentId }) {
 
   const initials = (selected?.name || '').replace(/^(นาย|นาง|นางสาว)/, '').trim().slice(0, 1) || '?';
 
+  // ประวัติทัณฑ์บนของนักเรียนที่กำลังเลือกอยู่ — คนละชุดกับ historyGroups ด้านบน
+  // (ซึ่งเป็นประวัติตัดคะแนนที่รีเซ็ตทุกปี) ทัณฑ์บนนี้อยู่ถาวรไม่รีเซ็ต
+  const selectedProbation = selected ? (probationByStudent[selected.studentId] || []) : [];
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-24">
@@ -229,9 +256,19 @@ export default function StudentProfile({ initialStudentId }) {
                   <p className="mt-1 text-[13px] text-brand-100/80">
                     {selected.fieldOfStudy} · {selected.level} · {selected.studentId}
                   </p>
-                  <span className="mt-2 inline-flex items-center rounded-full bg-white/[0.14] px-3 py-1 text-[12.5px] font-semibold text-gold-50">
-                    {selected.status ? `${selected.status.action} (${selected.status.ref})` : 'ปกติ — ยังไม่ถึงเกณฑ์'}
-                  </span>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className="inline-flex items-center rounded-full bg-white/[0.14] px-3 py-1 text-[12.5px] font-semibold text-gold-50">
+                      {selected.status ? `${selected.status.action} (${selected.status.ref})` : 'ปกติ — ยังไม่ถึงเกณฑ์'}
+                    </span>
+                    {/* 🏷️ ป้ายนี้อยู่ถาวรไม่ว่าจะขึ้นปีการศึกษาไปกี่รอบแล้วก็ตาม —
+                        ต่างจากป้ายคะแนนสะสมด้านซ้ายที่รีเซ็ตทุกปี (ดูเหตุผลเต็มที่
+                        Service_Probation.gs) */}
+                    {selectedProbation.length > 0 && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-bad-fg/90 px-3 py-1 text-[12.5px] font-semibold text-white">
+                        <ShieldAlert size={12} /> เคยทำทัณฑ์บน ({selectedProbation.length})
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -246,6 +283,40 @@ export default function StudentProfile({ initialStudentId }) {
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* --- ทัณฑ์บน: คนละเรื่องกับคะแนนสะสม ไม่รีเซ็ตทุกปีการศึกษา --- */}
+          <div className="rounded-[20px] border border-line bg-white p-[18px]">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <h3 className="font-display text-[15px] font-medium text-ink">
+                ประวัติทัณฑ์บน ({selectedProbation.length} ครั้ง)
+              </h3>
+              {canManageProbation && (
+                <button
+                  type="button"
+                  onClick={() => setAddingProbationFor({ studentId: selected.studentId, studentName: selected.name })}
+                  className="inline-flex items-center gap-1.5 min-h-9 px-3.5 rounded-[11px] border-[1.5px] border-bad-fg/40 bg-bad-bg text-[12.5px] font-semibold text-bad-fg hover:brightness-95 transition"
+                >
+                  <Plus size={14} /> บันทึกทัณฑ์บน
+                </button>
+              )}
+            </div>
+
+            {selectedProbation.length === 0 ? (
+              <p className="py-2 text-sm text-ink-faint">ยังไม่เคยทำทัณฑ์บน</p>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {selectedProbation.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between gap-3 rounded-[13px] bg-bad-bg/50 px-3.5 py-2.5">
+                    <div className="min-w-0">
+                      <p className="text-[13.5px] font-semibold text-ink">{p.date || 'ไม่ระบุวันที่'}</p>
+                      {p.note && <p className="mt-0.5 text-xs text-ink-mute truncate">{p.note}</p>}
+                    </div>
+                    <span className="shrink-0 text-[11px] text-ink-faint">บันทึกโดย {p.recordedBy}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="rounded-[20px] border border-line bg-white p-[18px]">
@@ -305,6 +376,14 @@ export default function StudentProfile({ initialStudentId }) {
             ))}
           </div>
         </>
+      )}
+
+      {addingProbationFor && (
+        <ProbationModal
+          student={addingProbationFor}
+          onClose={() => setAddingProbationFor(null)}
+          onSaved={fetchProbationStatus}
+        />
       )}
     </div>
   );

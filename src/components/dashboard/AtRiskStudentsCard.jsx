@@ -23,7 +23,13 @@ const FILTER_OPTIONS = [
 ];
 
 // รายชื่อนักเรียนที่คะแนนสะสมถึงเกณฑ์ต้องดำเนินการตามระเบียบข้อ 8.3
-export default function AtRiskStudentsCard({ students, thisAcademicYear, onViewStudent }) {
+//
+// probationByStudent/onAddProbation (ไม่บังคับ — Dashboard.jsx เป็นคนส่งมาถ้า
+// ผู้ใช้งานมีสิทธิ์บันทึกทัณฑ์บน) ทำให้เจ้าหน้าที่บันทึกทัณฑ์บนได้ทันทีจากตรงนี้
+// เลย ไม่ต้องไปค้นหานักเรียนซ้ำที่หน้า "ประวัตินักเรียน" อีกรอบ (เดิมต้องทำแบบ
+// นั้น ผู้ใช้งานจริงบอกว่าหาปุ่มไม่เจอ + ขั้นตอนเยอะเกินไป) เพราะการ์ดนี้ก็คือ
+// รายชื่อที่ "ต้องดำเนินการ" อยู่แล้วตามคำจำกัดความของมันเอง
+export default function AtRiskStudentsCard({ students, thisAcademicYear, onViewStudent, probationByStudent = {}, onAddProbation }) {
   const [filterKey, setFilterKey] = useState('all');
   const [copied, setCopied] = useState(false);
 
@@ -96,20 +102,38 @@ export default function AtRiskStudentsCard({ students, thisAcademicYear, onViewS
                 {s.total}
               </div>
               <div className="flex-1 min-w-[150px]">
-                <p className="text-[14.5px] font-semibold text-ink truncate">{s.name}</p>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <p className="text-[14.5px] font-semibold text-ink truncate">{s.name}</p>
+                  {probationByStudent[s.studentId]?.length > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-ink/[0.08] px-2 py-0.5 text-[10.5px] font-semibold text-ink-soft shrink-0">
+                      <ShieldAlert size={10} /> เคยทำทัณฑ์บนแล้ว
+                    </span>
+                  )}
+                </div>
                 <p className="mt-0.5 text-xs text-ink-mute">{s.count} รายการ</p>
                 <span className={`mt-1.5 inline-flex items-center rounded-full px-2.5 py-1 text-[11.5px] font-semibold ${ACTION_PILL_CLS[s.status.tone]}`}>
                   {s.status.action} ({s.status.ref})
                 </span>
               </div>
-              {onViewStudent && (
-                <button
-                  onClick={() => onViewStudent(s.studentId)}
-                  className="shrink-0 min-h-10 px-4 rounded-xl border border-line bg-white text-sm font-semibold text-brand-600 hover:bg-brand-50 hover:border-brand-200 transition-colors"
-                >
-                  ดูประวัติ
-                </button>
-              )}
+              <div className="flex shrink-0 items-center gap-2">
+                {onAddProbation && (
+                  <button
+                    onClick={() => onAddProbation(s.studentId, s.name)}
+                    className="min-h-10 px-3.5 rounded-xl border border-bad-fg/30 bg-bad-bg text-sm font-semibold text-bad-fg hover:brightness-95 transition"
+                    title="บันทึกว่านักเรียนคนนี้ทำทัณฑ์บน"
+                  >
+                    บันทึกทัณฑ์บน
+                  </button>
+                )}
+                {onViewStudent && (
+                  <button
+                    onClick={() => onViewStudent(s.studentId)}
+                    className="min-h-10 px-4 rounded-xl border border-line bg-white text-sm font-semibold text-brand-600 hover:bg-brand-50 hover:border-brand-200 transition-colors"
+                  >
+                    ดูประวัติ
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>

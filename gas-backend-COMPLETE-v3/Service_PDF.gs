@@ -71,15 +71,79 @@ function generatePDF(data, refId) {
 
     const pdfBlob = newFile.getAs(MimeType.PDF);
     const pdfFile = folder.createFile(pdfBlob);
-    // 🔒 เปลี่ยนจาก ANYONE_WITH_LINK (ใครก็ได้ทั่วโลกที่มีลิงก์ดูได้) เป็น
-    // DOMAIN_WITH_LINK (ต้องล็อกอินด้วยบัญชี Google ของวิทยาลัยก่อนถึงจะดูได้)
-    // เพราะ PDF นี้มีข้อมูลส่วนบุคคลของนักเรียนอยู่ (ชื่อ-สกุล รหัสนักเรียน
-    // รายละเอียดความผิด) ไม่ควรเปิดให้ใครก็ได้ในโลกดูได้แค่มีลิงก์
-    pdfFile.setSharing(DriveApp.Access.DOMAIN_WITH_LINK, DriveApp.Permission.VIEW);
+    // 🔒 เดิมแชร์แบบ DOMAIN_WITH_LINK (ใครก็ได้ในโดเมน Google Workspace ของ
+    // วิทยาลัยที่มีลิงก์ดูได้) แต่พบว่านักเรียนบางคนก็มีบัญชีอยู่ในโดเมนเดียวกัน
+    // ด้วย (ยืนยันจากผู้ใช้งานแล้ว) ทำให้นักเรียนที่ได้ลิงก์ PDF มาไม่ว่าทางใด
+    // เปิดดูประวัติวินัยของเพื่อนได้ทั้งที่ไม่ควรมีสิทธิ์เข้าถึงเลย — เปลี่ยนมา
+    // แชร์เฉพาะรายชื่ออีเมลบุคลากรที่มีบัญชีในระบบนี้จริง (ดู getStaffEmails_ ใน
+    // Service_Users.gs) แทน ตัดนักเรียนออกไปโดยอัตโนมัติเพราะไม่มีบัญชีในชีต
+    // Users ตั้งแต่แรก — บัญชีที่ยังไม่ได้กรอกอีเมลไว้จะเปิดลิงก์นี้ไม่ได้ ต้องเติม
+    // อีเมลให้ครบผ่านหน้า "จัดการผู้ใช้งาน" ก่อน
+    const staffEmails = getStaffEmails_();
+    if (staffEmails.length > 0) {
+        try {
+            pdfFile.addViewers(staffEmails);
+        } catch (err) {
+            // addViewers() ทั้งก้อนอาจล้มเหลวถ้ามีอีเมลใดอีเมลหนึ่งผิดรูปแบบ/ไม่ใช่
+            // บัญชี Google จริง (เช่น พิมพ์ผิดตอนกรอก) ลองแชร์ทีละคนแทน กันเอกสาร
+            // ทั้งฉบับไม่มีใครได้สิทธิ์ดูเลยเพราะอีเมลเดียวผิด
+            staffEmails.forEach((email) => {
+                try { pdfFile.addViewer(email); } catch (e2) { console.error('แชร์ PDF ให้ ' + email + ' ไม่สำเร็จ: ' + e2); }
+            });
+        }
+    }
 
     newFile.setTrashed(true);
 
     return pdfFile.getUrl();
+}
+
+// ==========================================
+// รันครั้งเดียวจาก Apps Script Editor (เลือกฟังก์ชันนี้แล้วกด Run) หลัง deploy
+// โค้ดชุดที่เปลี่ยนการแชร์ PDF จาก DOMAIN_WITH_LINK มาเป็นเฉพาะอีเมลบุคลากร (ดู
+// คำอธิบายเต็มที่ generatePDF() ด้านบน) — แก้ได้เฉพาะไฟล์ที่สร้างใหม่หลังจากนั้น
+// อัตโนมัติเท่านั้น ไฟล์ PDF เก่าที่มีอยู่แล้วก่อนหน้านี้ยังแชร์แบบเดิมค้างอยู่
+// (นักเรียนที่อยู่โดเมนเดียวกันยังเปิดดูได้ถ้าได้ลิงก์เก่ามา) ต้องรันฟังก์ชันนี้
+// เพื่อแก้ย้อนหลังให้ไฟล์เก่าทั้งหมดด้วย
+//
+// วนอ่านทุกไฟล์ PDF ในโฟลเดอร์ CONFIG.FOLDER_ID เฉพาะไฟล์ที่ยังแชร์แบบลิงก์กว้างๆ
+// อยู่ (ข้ามไฟล์ที่แก้ไปแล้วจากรอบก่อนหน้าโดยอัตโนมัติ ปลอดภัยที่จะรันซ้ำได้เสมอ)
+// — Apps Script จำกัดเวลารันสูงสุด 6 นาที/ครั้ง ถ้าไฟล์เยอะมากจนรันไม่ทันในรอบ
+// เดียว ให้กด Run ซ้ำได้เรื่อยๆ จนกว่า Logger จะรายงานว่าตรวจไม่เจอไฟล์ที่ต้อง
+// แก้อีกแล้ว
+// ==========================================
+function migrateExistingPdfSharingToStaffOnly_() {
+    const folder = DriveApp.getFolderById(CONFIG.FOLDER_ID);
+    const staffEmails = getStaffEmails_();
+    const files = folder.getFilesByType(MimeType.PDF);
+
+    const MAX_RUNTIME_MS = 5 * 60 * 1000; // เผื่อเวลาไว้ก่อนชนขีดจำกัด 6 นาทีของ Apps Script
+    const startTime = Date.now();
+    let checked = 0;
+    let fixed = 0;
+
+    while (files.hasNext()) {
+        if (Date.now() - startTime > MAX_RUNTIME_MS) {
+            Logger.log('ใกล้ครบเวลาที่กำหนดไว้แล้ว หยุดรอบนี้ก่อน (ตรวจไป ' + checked + ' ไฟล์ แก้แล้ว ' + fixed + ' ไฟล์) — กด Run ซ้ำอีกครั้งเพื่อทำต่อจากไฟล์ที่เหลือ');
+            return;
+        }
+
+        const file = files.next();
+        checked++;
+
+        try {
+            const access = file.getSharingAccess();
+            if (access === DriveApp.Access.DOMAIN_WITH_LINK || access === DriveApp.Access.ANYONE_WITH_LINK || access === DriveApp.Access.ANYONE) {
+                file.setSharing(DriveApp.Access.PRIVATE, DriveApp.Permission.NONE);
+                if (staffEmails.length > 0) file.addViewers(staffEmails);
+                fixed++;
+            }
+        } catch (e) {
+            Logger.log('แก้สิทธิ์ไฟล์ ' + file.getName() + ' ไม่สำเร็จ: ' + e);
+        }
+    }
+
+    Logger.log('เสร็จสมบูรณ์ — ตรวจสอบไปทั้งหมด ' + checked + ' ไฟล์ แก้สิทธิ์การแชร์ไปแล้ว ' + fixed + ' ไฟล์ (ที่เหลือแชร์แบบจำกัดอยู่แล้วตั้งแต่แรก ไม่ต้องแก้)');
 }
 
 // ==========================================

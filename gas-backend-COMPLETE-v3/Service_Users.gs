@@ -1,8 +1,63 @@
 // ==========================================
 // ไฟล์ Service_Users.gs : จัดการผู้ใช้งานระบบ
-// ทุกฟังก์ชันในไฟล์นี้เป็นสิทธิ์ผู้ดูแลระบบ (Admin) เท่านั้น — requireAdmin()
-// จะโยน error ทันทีถ้าผู้เรียกไม่ใช่ admin หรือไม่ได้ login
+// ทุกฟังก์ชันในไฟล์นี้เป็นสิทธิ์ผู้ดูแลระบบ (Admin) เท่านั้น (requireAdmin() จะ
+// โยน error ทันทีถ้าผู้เรียกไม่ใช่ admin หรือไม่ได้ login) ยกเว้น getStaffEmails_()
+// ด้านล่างซึ่งเป็น helper ภายในล้วนๆ ไม่มี token — ดูคำอธิบายที่ฟังก์ชันนั้น
 // ==========================================
+
+// ==========================================
+// 🔒 รายชื่ออีเมลบุคลากรทั้งหมดที่มีในชีต Users (คอลัมน์ F) — ใช้แชร์ไฟล์ PDF
+// บันทึกตัดคะแนนให้เฉพาะบุคลากรที่มีบัญชีในระบบนี้จริง (ดู generatePDF() ใน
+// Service_PDF.gs) แทนการแชร์ "ทั้งโดเมน Google Workspace" แบบเดิม ซึ่งพบว่า
+// นักเรียนบางคนก็อยู่โดเมนเดียวกันด้วย (ยืนยันจากผู้ใช้งานแล้ว) ทำให้นักเรียนที่
+// ได้ลิงก์ PDF มาไม่ว่าทางใดก็ตาม เปิดดูประวัติวินัยของเพื่อนได้ทั้งที่ไม่ควรมี
+// สิทธิ์เข้าถึงเลย
+//
+// ⚠️ ผลกระทบสำคัญ: บุคลากรที่ยังไม่เคยกรอกอีเมลไว้ในหน้า "จัดการผู้ใช้งาน" (คอลัมน์
+// Email เป็นฟีเจอร์เสริมที่เพิ่งเพิ่มทีหลัง หลายบัญชีเก่าอาจยังว่างอยู่) จะเปิดลิงก์
+// PDF ไม่ได้อีกต่อไปหลัง deploy นี้ ควรตรวจสอบ/เติมอีเมลให้ครบทุกบัญชีที่ยังใช้งาน
+// อยู่ผ่านหน้าจัดการผู้ใช้งานก่อน
+//
+// แคชไว้ 10 นาที (ชีต Users ไม่ค่อยเปลี่ยนบ่อย) กัน generatePDF() ที่เรียกถี่ต้อง
+// อ่านทั้งชีต Users ใหม่ทุกครั้ง
+// ==========================================
+const STAFF_EMAILS_CACHE_KEY = 'staff_emails_v1';
+const STAFF_EMAILS_CACHE_TTL_SECONDS = 600;
+
+function getStaffEmails_() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(STAFF_EMAILS_CACHE_KEY);
+  if (cached) {
+    try { return JSON.parse(cached); } catch (e) { /* แคชอ่านไม่ขึ้น อ่านจากชีตใหม่แทน */ }
+  }
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Users");
+  if (!sheet) return [];
+
+  const data = sheet.getDataRange().getValues();
+  const emails = [];
+  for (let i = 1; i < data.length; i++) {
+    const email = String(data[i][5] || '').trim();
+    // เช็กแบบง่ายๆ พอ (มี @ และไม่มีช่องว่าง) กันแถวที่กรอกผิด/พิมพ์ข้อความมั่ว
+    // ทำให้ addViewers() ทั้งก้อนล้มเหลวไปทั้งหมดเพราะอีเมลเดียวผิดรูปแบบ
+    if (email && email.indexOf('@') !== -1 && email.indexOf(' ') === -1) {
+      emails.push(email);
+    }
+  }
+
+  try {
+    cache.put(STAFF_EMAILS_CACHE_KEY, JSON.stringify(emails), STAFF_EMAILS_CACHE_TTL_SECONDS);
+  } catch (e) { /* แคชพังไม่ควรทำให้ฟังก์ชันหลักพังตาม */ }
+
+  return emails;
+}
+
+// เรียกทันทีหลังเพิ่ม/แก้ไขอีเมลผู้ใช้งานสำเร็จ กันไม่ให้ PDF ที่สร้างในช่วง 10
+// นาทีถัดมายังใช้รายชื่ออีเมลเก่าที่ค้างอยู่ในแคช (เดิมไม่มีจุดนี้เพราะไม่เคยมี
+// การแคชรายชื่ออีเมลมาก่อน)
+function invalidateStaffEmailsCache_() {
+  CacheService.getScriptCache().remove(STAFF_EMAILS_CACHE_KEY);
+}
 
 function getUsersList(token) {
   requireAdmin(token);
@@ -68,6 +123,7 @@ function createUser(token, newUserData) {
   // ได้ — ความเสี่ยงต่ำกว่าฝั่ง Records เพราะหน้านี้ admin เท่านั้นที่เขียนถึง แต่
   // ทำไว้เผื่อบัญชี admin ถูกขโมย/ใช้งานผิดพลาด ต้นทุนแทบเป็นศูนย์
   sheet.appendRow([username, saltedHash, sanitizeForSheetCell_(newUserData.fullName || ''), newUserData.role || '', salt, newUserData.email || '']);
+  invalidateStaffEmailsCache_();
 
   logAudit(getSession(token).username, "CREATE_USER", username, "SUCCESS");
   return { status: "success", message: "เพิ่มผู้ใช้งานสำเร็จ" };
@@ -97,6 +153,7 @@ function updateUser(token, updatedData) {
   // อีเมลเดิมทิ้ง" จึงเขียนทับเฉพาะตอนมีค่าจริงส่งมาเท่านั้น กันข้อมูลหายโดยไม่ตั้งใจ
   if (updatedData.email) {
     sheet.getRange(rowIndex, 6).setValue(updatedData.email);
+    invalidateStaffEmailsCache_();
   }
 
   if (updatedData.password) {

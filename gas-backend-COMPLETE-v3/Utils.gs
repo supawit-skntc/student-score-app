@@ -163,6 +163,18 @@ function requireAdmin(token) {
   return session;
 }
 
+// ใช้กับ action ระดับงานปกครอง/วินัย เช่น การบันทึกทัณฑ์บน — ไม่ควรเปิดให้ครู
+// ผู้สอนทั่วไปบันทึกเองได้ฝ่ายเดียว แต่ก็ไม่จำเป็นต้องจำกัดแค่ "ผู้ดูแลระบบ" เต็ม
+// รูปแบบ (ซึ่งเป็นสิทธิ์ระดับจัดการผู้ใช้งาน/ระบบ คนละเรื่องกับงานปกครอง) จึงเปิด
+// ให้ทั้งแอดมินและกลุ่มเห็นทุกรายการ (ครูปกครอง, ผู้อำนวยการ ฯลฯ) ทำได้
+function requireDisciplineStaff_(token) {
+  const session = requireSession(token);
+  if (ADMIN_ROLES.indexOf(session.role) === -1 && FULL_VISIBILITY_ROLES.indexOf(session.role) === -1) {
+    throw new Error('คุณไม่มีสิทธิ์เข้าถึงฟังก์ชันนี้');
+  }
+  return session;
+}
+
 // 🔓 ยกเลิก session จริงฝั่งเซิร์ฟเวอร์ตอนกด "ออกจากระบบ" — เดิมกด logout แค่ลบ
 // currentUser ออกจาก localStorage ฝั่ง browser เท่านั้น token เดิมยังใช้งานได้จน
 // ครบ 6 ชม.ตามปกติ ถ้ามีใครขโมย token ไปได้ก่อนหน้านั้นก็ยังใช้ต่อได้อยู่ ฟังก์ชันนี้

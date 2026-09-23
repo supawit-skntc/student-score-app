@@ -4,13 +4,14 @@ import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
 import { statusForPoints } from '../data/thresholds';
 import { academicYearOf, currentAcademicYear, currentTermLabel } from '../data/academicYear';
-import { isAdmin } from '../utils/permissions';
+import { isAdmin, canViewAllRecords } from '../utils/permissions';
 import { parsePoints } from '../utils/points';
 import SummaryCard from '../components/ui/SummaryCard';
 import AtRiskStudentsCard from '../components/dashboard/AtRiskStudentsCard';
 import TopOffensesCard from '../components/dashboard/TopOffensesCard';
 import TopStudentsCard from '../components/dashboard/TopStudentsCard';
 import RpaBotCard from '../components/dashboard/RpaBotCard';
+import ProbationModal from '../components/ProbationModal';
 
 function normalizeOffense(offense = '') {
   return offense.startsWith('อื่นๆ') ? 'อื่นๆ' : offense;
@@ -23,6 +24,22 @@ export default function Dashboard({ onViewStudent }) {
   const [rpaLoading, setRpaLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
   const admin = isAdmin(currentUser);
+  const canManageProbation = canViewAllRecords(currentUser);
+
+  // สถานะทัณฑ์บน + ปุ่มบันทึกด่วนจากการ์ด "นักเรียนที่ถึงเกณฑ์" — ดูเหตุผลเต็มที่
+  // AtRiskStudentsCard.jsx (ฟีดแบ็กจากผู้ใช้งานจริง: หน้า "ประวัตินักเรียน" เดิม
+  // หาปุ่มบันทึกทัณฑ์บนยาก + ต้องค้นหานักเรียนเองก่อนถึงจะทำได้)
+  const [probationByStudent, setProbationByStudent] = useState({});
+  const [probationTarget, setProbationTarget] = useState(null); // { studentId, studentName } | null
+
+  const fetchProbationStatus = async () => {
+    try {
+      const result = await callAPI('getProbationStatus', {});
+      if (result.status === 'success') setProbationByStudent(result.data || {});
+    } catch {
+      // เงียบไว้ — ไม่ให้ป้ายทัณฑ์บนที่ดึงไม่สำเร็จไปรบกวนแผงควบคุมหลัก
+    }
+  };
 
   // 🔄 รีเฟรชข้อมูลอัตโนมัติเป็นระยะ — เดิมหน้านี้ดึงข้อมูลแค่ตอนเปิดหน้าครั้ง
   // เดียว ถ้าเปิดแผงควบคุมค้างไว้จอมอนิเตอร์ (การใช้งานจริงของแอดมิน — เปิดคอม
@@ -54,6 +71,7 @@ export default function Dashboard({ onViewStudent }) {
     };
 
     loadRecords(true);
+    fetchProbationStatus();
     const intervalId = setInterval(() => loadRecords(false), 45000);
 
     const stored = localStorage.getItem('currentUser');
@@ -193,6 +211,8 @@ export default function Dashboard({ onViewStudent }) {
         students={stats.atRiskStudents}
         thisAcademicYear={stats.thisAcademicYear}
         onViewStudent={onViewStudent}
+        probationByStudent={probationByStudent}
+        onAddProbation={canManageProbation ? (studentId, studentName) => setProbationTarget({ studentId, studentName }) : undefined}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[18px]">
@@ -205,6 +225,14 @@ export default function Dashboard({ onViewStudent }) {
       </div>
 
       {admin && <RpaBotCard rpaStats={rpaStats} rpaLoading={rpaLoading} />}
+
+      {probationTarget && (
+        <ProbationModal
+          student={probationTarget}
+          onClose={() => setProbationTarget(null)}
+          onSaved={fetchProbationStatus}
+        />
+      )}
 
     </div>
   );

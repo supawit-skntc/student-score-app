@@ -1,7 +1,7 @@
 // src/services/api.js
 
 // URL ของ Google Apps Script (Web App) จากระบบเดิมของคุณ
-const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyXSRUZh9OlnOdfNfx1duecZxU5WxpBc5AIXehox45yEENDsKWvW8CxlBRzYo3pNmJn/exec";
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyj2LtWe59vno5BhHWrkM7dr_0qyYAQm4cXKSoRvDJGMPmIdKyLJOKjiYGmJoFN2X2Y/exec";
 
 // Google เด้งหน้า HTML กลับมาแทน JSON เป็นครั้งคราวโดยไม่มีสาเหตุจากโค้ดเราเลย
 // (เจอมาแล้วหลายครั้ง ทั้งฝั่งเว็บนี้และฝั่งบอท RPA) ลองใหม่อัตโนมัติสั้นๆ ก่อนจะ
@@ -28,7 +28,7 @@ const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyXSRUZh9OlnOdfNfx1
 // บันทึกข้อมูล) ขึ้นมาเป็น error 404 ให้ครูเห็นทันทีโดยไม่มีการลองใหม่อัตโนมัติเลย
 const RETRYABLE_ACTIONS = new Set([
   'login', 'logout', 'getRecords', 'getMyRecords', 'getUsers', 'getAuditLogs', 'getRpaStats',
-  'getOffenses', 'getRoleTiers',
+  'getOffenses', 'getRoleTiers', 'getProbationStatus',
   'addRecord', 'generateRecordPdf', 'ocrScan',
 ]);
 const MAX_ATTEMPTS = 3;
@@ -55,8 +55,8 @@ function getStoredToken() {
 // อายุแคชสั้นกว่าฝั่งเซิร์ฟเวอร์ (15 วิ < 30 วิ) เพื่อให้เห็นข้อมูลใหม่ไม่ช้ากว่าเดิม
 // มาก และล้างแคชทั้งหมดทันทีเมื่อมี action เขียนข้อมูลสำเร็จ (ปลอดภัยไว้ก่อน ไม่
 // ต้องคิดว่า action ไหนกระทบ cache key ไหนบ้าง)
-const READ_CACHEABLE_ACTIONS = new Set(['getRecords', 'getMyRecords', 'getUsers', 'getAuditLogs', 'getRpaStats', 'getOffenses', 'getRoleTiers']);
-const WRITE_ACTIONS = new Set(['addRecord', 'updateRecord', 'deleteRecord', 'createUser', 'updateUser', 'deleteUser', 'generateRecordPdf']);
+const READ_CACHEABLE_ACTIONS = new Set(['getRecords', 'getMyRecords', 'getUsers', 'getAuditLogs', 'getRpaStats', 'getOffenses', 'getRoleTiers', 'getProbationStatus']);
+const WRITE_ACTIONS = new Set(['addRecord', 'updateRecord', 'deleteRecord', 'createUser', 'updateUser', 'deleteUser', 'generateRecordPdf', 'addProbationRecord']);
 const READ_CACHE_TTL_MS = 15000;
 
 // 'getOffenses'/'getRoleTiers' แทบไม่เปลี่ยนเลย (ผูกกับระเบียบวิทยาลัย/เทมเพลต

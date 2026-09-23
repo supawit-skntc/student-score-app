@@ -41,6 +41,12 @@ function doPost(e) {
       case "getOffenses":
         response = getOffenses(token);
         break;
+      case "getProbationStatus":
+        response = getProbationStatus(token);
+        break;
+      case "addProbationRecord":
+        response = addProbationRecord(token, requestBody.data);
+        break;
 
       // ===== ผู้ดูแลระบบเท่านั้น =====
       case "getUsers":
