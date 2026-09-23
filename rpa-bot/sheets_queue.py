@@ -15,7 +15,7 @@ import time
 import keyring
 import requests
 
-GAS_API_URL = "https://script.google.com/macros/s/AKfycbxx-b292m3sjSbK4B1amqkL6wRpP7WW9-IXvXQz5EzmJh70F0YRogOg9rPjk_7pbTN2/exec"
+GAS_API_URL = "https://script.google.com/macros/s/AKfycbwdR-q9N5ipN4KIEagpeI6z2ELe_VEBJ--4Narhjiu0fOfjzY8YnpvEjoWHec--QVc1/exec"
 SERVICE = "rms-rpa-bot"
 APP_USERNAME = keyring.get_password(SERVICE, "app_username")
 APP_PASSWORD = keyring.get_password(SERVICE, "app_password")

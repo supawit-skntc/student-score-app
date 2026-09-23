@@ -62,14 +62,15 @@ export default function StudentProfile({ initialStudentId }) {
   const [addingProbationFor, setAddingProbationFor] = useState(null); // { studentId, studentName } | null
   const [editingProbation, setEditingProbation] = useState(null); // { id, date, note } | null
 
-  // การ์ด "นักเรียนที่มีประวัติทัณฑ์บน" แบ่งเป็นหมวดตามห้อง/ระดับชั้น พับเปิด-ปิด
-  // ได้ทีละหมวด (ดูเหตุผลเต็มที่ตัวแปร probationGroups ด้านล่าง) — เก็บเฉพาะ "หมวด
-  // ที่ถูกพับ" (ค่าเริ่มต้น = เปิดหมดทุกหมวด) แทนที่จะเก็บ "หมวดที่เปิด" เพราะ
-  // รายชื่อหมวดขึ้นกับข้อมูลที่ยังโหลดไม่เสร็จตอน mount ครั้งแรก ไม่รู้ล่วงหน้าว่า
-  // มีหมวดอะไรบ้างถึงจะเซ็ตค่าเริ่มต้นเป็น true ให้ครบทุกหมวดได้
-  const [collapsedProbationGroups, setCollapsedProbationGroups] = useState(() => new Set());
+  // การ์ด "นักเรียนที่มีประวัติทัณฑ์บน" แบ่งเป็นหมวดตามชั้นปี กดที่หัวหมวดเพื่อ
+  // กางดูรายชื่อ (ดูเหตุผลเต็มที่ตัวแปร probationGroups ด้านล่าง) — ค่าเริ่มต้น "พับ
+  // ทุกหมวด" โชว์แค่ชื่อชั้นปี + จำนวนคน (เช่น ปวช.2 (1 คน)) ไม่โชว์รายชื่อนักเรียนก่อน
+  // ที่ผู้ใช้งานจะกดเอง (ฟีดแบ็กจากผู้ใช้งานจริง: รายชื่อโผล่มาเองทั้งที่ยังไม่ได้ค้นหา/
+  // กดดู) เก็บเป็น "หมวดที่ถูกกางออก" (ว่าง = พับหมด) ซึ่งทำให้หมวดที่เพิ่งโผล่หลังโหลด
+  // ข้อมูลเสร็จพับอยู่ตามค่าเริ่มต้นเองโดยไม่ต้องรู้รายชื่อหมวดล่วงหน้า
+  const [expandedProbationGroups, setExpandedProbationGroups] = useState(() => new Set());
   const toggleProbationGroup = (key) => {
-    setCollapsedProbationGroups((prev) => {
+    setExpandedProbationGroups((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
@@ -409,7 +410,7 @@ export default function StudentProfile({ initialStudentId }) {
           </div>
           <div className="mt-1 flex flex-col">
             {probationGroups.map(({ level, list }) => {
-              const collapsed = collapsedProbationGroups.has(level);
+              const collapsed = !expandedProbationGroups.has(level);
               return (
                 <div key={level} className="border-t border-line-soft first:border-t-0">
                   <button
