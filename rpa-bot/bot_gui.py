@@ -38,6 +38,8 @@ from tkinter import messagebox, filedialog
 import customtkinter as ctk
 import keyring
 
+from app_paths import app_dir, is_frozen
+
 SERVICE = "rms-rpa-bot"
 
 FIELDS = [
@@ -600,7 +602,13 @@ class BotControlPanel(ctk.CTk):
         mode_label = "ทดสอบ (dry run)" if dry_run else "รันจริง"
         self._append_log(f"{'=' * 50}\nเริ่ม{mode_label}...\n{'=' * 50}")
 
-        args = [sys.executable, "main.py"]
+        # ตอนเป็นไฟล์ .exe: sys.executable คือตัวหน้าต่างเอง (ไม่มี python ให้เรียก
+        # main.py) จึงเรียก rms-bot-runner.exe ที่อยู่โฟลเดอร์เดียวกันแทน — ตัวเดียวกับ
+        # ที่ Task Scheduler ใช้รันอัตโนมัติ ตอนรันจากซอร์สโค้ดยังเรียก main.py เหมือนเดิม
+        if is_frozen():
+            args = [os.path.join(app_dir(), "rms-bot-runner.exe")]
+        else:
+            args = [sys.executable, "main.py"]
         if dry_run:
             args.append("--dry-run")
 
@@ -624,6 +632,8 @@ class BotControlPanel(ctk.CTk):
                     errors="replace",
                     bufsize=1,
                     env=child_env,
+                    # ไม่ให้หน้าต่างจอดำแวบขึ้นมาตอนกดรัน (ตัว runner เป็นโปรแกรม console)
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
                 for line in self.process.stdout:
                     self.after(0, self._append_log, line)

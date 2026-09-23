@@ -10,12 +10,42 @@ setup_credentials.bat) จะถามรหัสผ่านแล้วเก
 
 import json
 import logging
+import os
 import time
 
 import keyring
 import requests
 
-GAS_API_URL = "https://script.google.com/macros/s/AKfycbwdR-q9N5ipN4KIEagpeI6z2ELe_VEBJ--4Narhjiu0fOfjzY8YnpvEjoWHec--QVc1/exec"
+from app_paths import app_dir
+
+DEFAULT_GAS_API_URL = "https://script.google.com/macros/s/AKfycbwdR-q9N5ipN4KIEagpeI6z2ELe_VEBJ--4Narhjiu0fOfjzY8YnpvEjoWHec--QVc1/exec"
+
+
+def _load_gas_url() -> str:
+    """URL ของ Apps Script Web App — ลำดับความสำคัญ: ตัวแปรสภาพแวดล้อม
+    RMS_BOT_GAS_URL > ไฟล์ config.json ข้างโปรแกรม (คีย์ gas_api_url) > ค่าเริ่มต้นในโค้ด
+
+    ทำไมไม่ฝังในโค้ดอย่างเดียว: ตอนแจกเป็นไฟล์ .exe ค่าที่ฝังไว้จะถูกแช่แข็งตอน build
+    ทุกครั้งที่ deploy Apps Script ใหม่แล้วได้ URL ใหม่ (เกิดบ่อย) จะต้อง build โปรแกรม
+    ใหม่แจกทุกเครื่อง — ตอนนี้แก้แค่ config.json ด้วย Notepad ก็พอ ไม่ต้อง build ใหม่
+    """
+    env_url = os.environ.get("RMS_BOT_GAS_URL", "").strip()
+    if env_url:
+        return env_url
+    path = os.path.join(app_dir(), "config.json")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            url = str(json.load(f).get("gas_api_url", "")).strip()
+        if url:
+            return url
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError) as e:
+        logging.getLogger("sheets_queue").warning("อ่าน config.json ไม่สำเร็จ (%s) — ใช้ URL ค่าเริ่มต้นในโค้ดแทน", e)
+    return DEFAULT_GAS_API_URL
+
+
+GAS_API_URL = _load_gas_url()
 SERVICE = "rms-rpa-bot"
 APP_USERNAME = keyring.get_password(SERVICE, "app_username")
 APP_PASSWORD = keyring.get_password(SERVICE, "app_password")

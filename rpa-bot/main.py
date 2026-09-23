@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 
+from app_paths import app_dir
 from sheets_queue import get_pending_records, update_status, log_event, report_bot_failure
 from rms_bot import run_batch
 
@@ -44,7 +45,7 @@ STATUS_MAP = {
 # กลางคันไม่ทันลบไฟล์ lock ทิ้ง (ถ้าใช้แค่ "ไฟล์เก่ากว่า N นาทีถือว่าค้าง" อาจไป
 # ตัดสินผิดว่าบอทที่กำลังรันจริงอยู่ "ค้าง" ทั้งที่ยังไม่ตายจริง)
 # ==========================================
-LOCK_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".bot.lock")
+LOCK_FILE_PATH = os.path.join(app_dir(), ".bot.lock")
 
 
 def _pid_is_running(pid: int) -> bool:
@@ -164,13 +165,15 @@ def run(dry_run: bool) -> None:
         )
 
 
-if __name__ == "__main__":
+def cli(argv=None) -> None:
+    """จุดเริ่มต้นของบอท — แยกเป็นฟังก์ชันเพื่อให้ทั้ง python main.py และไฟล์ .exe
+    (rpa_runner_app.py) เรียกใช้ตัวเดียวกันได้ ไม่ต้องเขียนตรรกะซ้ำสองที่"""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--dry-run", action="store_true",
         help="กรอกฟอร์มทดสอบทุกรายการแต่ไม่กดบันทึกจริง และไม่แก้สถานะในเว็บแอป",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if not acquire_lock():
         log.warning("มีบอทอีกตัวกำลังทำงานอยู่แล้ว (ตรวจพบจากไฟล์ .bot.lock) — ข้ามรอบนี้ไปก่อน กันบันทึกซ้ำซ้อนใน RMS")
@@ -179,3 +182,7 @@ if __name__ == "__main__":
         run(dry_run=args.dry_run)
     finally:
         release_lock()
+
+
+if __name__ == "__main__":
+    cli()
