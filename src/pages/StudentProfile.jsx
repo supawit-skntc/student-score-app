@@ -148,7 +148,12 @@ export default function StudentProfile({ initialStudentId }) {
   const filtered = students.filter(
     (s) => s.studentId.includes(searchTerm) || s.name.includes(searchTerm)
   );
-  const selected = students.find((s) => s.studentId === selectedId) || filtered[0] || null;
+  // 🐛 เดิม fallback เป็น filtered[0] เฉยๆ โดยไม่เช็กว่ามีคำค้นหาจริงไหม — ช่อง
+  // ว่างเปล่า "".includes(x) เป็น true เสมอ ทำให้ filtered = นักเรียนทุกคนตั้งแต่
+  // ยังไม่พิมพ์อะไรเลย แล้ว filtered[0] (คนคะแนนสะสมสูงสุด) ถูกเลือกโชว์รายละเอียด
+  // ให้อัตโนมัติตั้งแต่เพิ่งเปิดหน้ามา ทั้งที่ผู้ใช้งานยังไม่ได้ค้นหา/เลือกอะไรเลย
+  // — ต้องมีคำค้นหาจริงๆ (searchTerm ไม่ว่าง) ก่อน ถึงจะ fallback ไปคนแรกในผลลัพธ์ได้
+  const selected = students.find((s) => s.studentId === selectedId) || (searchTerm.trim() !== '' ? filtered[0] : null) || null;
 
   // 🔎 นักเรียนที่มีประวัติทัณฑ์บน (คนละเรื่องกับคะแนนสะสม ไม่รีเซ็ตทุกปี) — เดิม
   // ช่องค้นหาว่างๆ จะโชว์แค่ข้อความ "พิมพ์เพื่อค้นหา" เฉยๆ ทำให้คนที่ทำทัณฑ์บนไป
@@ -206,31 +211,7 @@ export default function StudentProfile({ initialStudentId }) {
         </div>
 
         {searchTerm.trim() === '' ? (
-          probationStudents.length > 0 ? (
-            <>
-              <div className="mb-2.5 flex items-center gap-1.5 text-xs font-semibold text-ink-mute">
-                <ShieldAlert size={13} className="text-bad-fg" />
-                นักเรียนที่มีประวัติทัณฑ์บน ({probationStudents.length} คน)
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {probationStudents.map((s) => (
-                  <button
-                    key={s.studentId}
-                    onClick={() => setSelectedId(s.studentId)}
-                    className="inline-flex items-center gap-2 min-h-11 rounded-[14px] pl-3.5 pr-3 text-[13.5px] font-semibold border-[1.5px] border-bad-fg/25 bg-bad-bg/60 text-bad-fg hover:brightness-95 transition-colors"
-                  >
-                    {s.name}
-                    <span className="inline-flex items-center rounded-full bg-bad-fg/15 px-2 py-0.5 text-[11px] font-bold">
-                      ×{probationByStudent[s.studentId].length}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <p className="mt-3 text-xs text-ink-faint">หรือพิมพ์รหัส/ชื่อด้านบนเพื่อค้นหานักเรียนคนอื่น</p>
-            </>
-          ) : (
-            <p className="py-6 text-center text-sm text-ink-faint">พิมพ์รหัสหรือชื่อเพื่อค้นหานักเรียน</p>
-          )
+          <p className="py-6 text-center text-sm text-ink-faint">พิมพ์รหัสหรือชื่อเพื่อค้นหานักเรียน</p>
         ) : filtered.length === 0 ? (
           <p className="py-6 text-center text-sm text-ink-faint">ไม่พบนักเรียนที่ค้นหา</p>
         ) : (
@@ -262,6 +243,45 @@ export default function StudentProfile({ initialStudentId }) {
           </>
         )}
       </div>
+
+      {/* --- นักเรียนที่มีประวัติทัณฑ์บน: การ์ดแยกต่างหาก ไม่ใช่ชิปแทรกอยู่ในการ์ด
+          ค้นหาเหมือนเดิม (ทำให้ดูรกและไม่เป็นสัดส่วน) — โชว์เฉพาะตอนยังไม่ได้พิมพ์
+          ค้นหา ให้เป็นทางลัดสำหรับดูคนที่มีประวัติทัณฑ์บนอยู่แล้วโดยไม่ต้องพิมพ์ชื่อ
+          เดา (ดูเหตุผลเต็มที่ตัวแปร probationStudents ด้านบน) --- */}
+      {searchTerm.trim() === '' && probationStudents.length > 0 && (
+        <div className="bg-white rounded-[20px] border border-line p-4">
+          <div className="flex items-center gap-2.5 mb-1">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-bad-bg text-bad-fg">
+              <ShieldAlert size={16} strokeWidth={2.25} />
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-display text-[15px] font-medium text-ink">นักเรียนที่มีประวัติทัณฑ์บน</h2>
+              <p className="text-xs text-ink-mute mt-0.5">แตะรายชื่อเพื่อดูรายละเอียด</p>
+            </div>
+            <span className="ml-auto shrink-0 inline-flex items-center rounded-full bg-bad-bg text-bad-fg px-3 py-1 text-[12.5px] font-bold">
+              {probationStudents.length} คน
+            </span>
+          </div>
+          <div className="mt-2 divide-y divide-line-soft">
+            {probationStudents.map((s) => (
+              <button
+                key={s.studentId}
+                type="button"
+                onClick={() => setSelectedId(s.studentId)}
+                className="w-full flex items-center gap-3 py-3 text-left rounded-[12px] px-2 -mx-2 hover:bg-line-soft/70 transition-colors"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13.5px] font-semibold text-ink truncate">{s.name}</p>
+                  <p className="mt-0.5 text-[11.5px] text-ink-mute">{s.level} · {s.studentId}</p>
+                </div>
+                <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-bad-bg/70 text-bad-fg px-2.5 py-1 text-[11.5px] font-bold">
+                  <ShieldAlert size={11} /> {probationByStudent[s.studentId].length} ครั้ง
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* --- รายละเอียด --- */}
       {!selected ? (

@@ -32,6 +32,13 @@ export default function Dashboard({ onViewStudent }) {
   const [probationByStudent, setProbationByStudent] = useState({});
   const [probationTarget, setProbationTarget] = useState(null); // { studentId, studentName } | null
 
+  // จำนวนนักเรียนที่มีประวัติทัณฑ์บนทั้งหมด (ไม่ผูกกับคะแนนสะสม/ปีการศึกษา) —
+  // ใช้กับการ์ดสรุปด้านล่าง โชว์เป็นตัวเลขรวมง่ายๆ กดแล้วพาไปหน้า "ประวัตินักเรียน"
+  // แบบไม่เลือกใครไว้ล่วงหน้า (ดู StudentProfile.jsx) ซึ่งจะโชว์รายชื่อทัณฑ์บน
+  // ทั้งหมดให้เลือกดูต่อได้ทันที — ไม่ต้องยิง API เพิ่มเพราะ probationByStudent
+  // ถูกดึงมาอยู่แล้วสำหรับป้าย/ปุ่มด่วนในการ์ด "นักเรียนที่ถึงเกณฑ์" ด้านล่าง
+  const probationCount = Object.keys(probationByStudent).length;
+
   const fetchProbationStatus = async () => {
     try {
       const result = await callAPI('getProbationStatus', {});
@@ -204,6 +211,14 @@ export default function Dashboard({ onViewStudent }) {
           label="รอบันทึกเข้า RMS"
           value={stats.notSyncedCount}
           meta="รอบอทประมวลผลเข้า RMS"
+        />
+        <SummaryCard
+          variant="plain"
+          tone="bad"
+          label="อยู่ระหว่างทัณฑ์บน"
+          value={probationCount}
+          meta={onViewStudent ? 'แตะเพื่อดูรายชื่อ' : undefined}
+          onClick={onViewStudent ? () => onViewStudent(null) : undefined}
         />
       </div>
 

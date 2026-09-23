@@ -26,9 +26,17 @@ const VALUE_TONE = {
   warn: 'text-warn-fg',
 };
 
-export default function SummaryCard({ label, value, meta, tone = 'ink', variant = 'plain', progress }) {
+// onClick (ไม่บังคับ) — ถ้าส่งมาจะเรนเดอร์เป็น <button> แทน <div> เฉยๆ พร้อม
+// hover/focus state ให้รู้ว่ากดได้ เช่น การ์ด "อยู่ระหว่างทัณฑ์บน" ที่กดแล้วพาไป
+// ดูรายชื่อต่อได้เลย แทนที่จะเป็นแค่ตัวเลขเฉยๆ ไม่ทำอะไรได้
+export default function SummaryCard({ label, value, meta, tone = 'ink', variant = 'plain', progress, onClick }) {
+  const Tag = onClick ? 'button' : 'div';
   return (
-    <div className={`p-4 rounded-[18px] ${VARIANT_STYLES[variant]}`}>
+    <Tag
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={`p-4 rounded-[18px] text-left w-full ${VARIANT_STYLES[variant]} ${onClick ? 'cursor-pointer transition-transform hover:-translate-y-0.5 hover:brightness-95 active:translate-y-0' : ''}`}
+    >
       <p className={`text-[12.5px] ${LABEL_TONE[variant]}`}>{label}</p>
       <p className={`mt-1.5 font-display text-[30px] font-semibold leading-none ${VALUE_TONE[tone]}`}>{value}</p>
       {meta && <p className={`mt-1.5 text-[11.5px] ${META_TONE[variant]}`}>{meta}</p>}
@@ -37,6 +45,6 @@ export default function SummaryCard({ label, value, meta, tone = 'ink', variant 
           <span className="block h-full rounded-full bg-ok-fg" style={{ width: `${Math.min(100, Math.max(0, progress))}%` }} />
         </div>
       )}
-    </div>
+    </Tag>
   );
 }
