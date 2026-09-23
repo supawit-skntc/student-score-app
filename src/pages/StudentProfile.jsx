@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Search, FileText, UserRound, Inbox, Trash2, ShieldAlert, Plus } from 'lucide-react';
+import { Loader2, Search, FileText, UserRound, Inbox, Trash2, ShieldAlert, Plus, ChevronDown } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
 import { statusForPoints } from '../data/thresholds';
@@ -13,6 +13,21 @@ import ProbationModal from '../components/ProbationModal';
 // (ไม่ใช่แค่ไม่กี่คนซ้ำๆ เหมือนข้อมูลตัวอย่างตอนออกแบบ) รายการจะยาวจนรกจอ ต้อง
 // ให้ครูพิมพ์ค้นหาให้เจาะจงขึ้นแทน
 const MAX_CHIP_RESULTS = 20;
+
+// ไล่สีตามความรุนแรง (จำนวนครั้งที่ทำทัณฑ์บน) แบบเดียวกับ SCORE_BOX_CLS ใน
+// AtRiskStudentsCard.jsx — คนละที่กันแต่หลักการเดียวกัน: ทำให้การ์ดนี้ "อ่านได้
+// ทันที" โดยไม่ต้องนับตัวเลขทีละคน 1 ครั้งยังถือว่าเบา ให้โทนกลาง ส่วน 3 ครั้งขึ้น
+// ไปถือว่าน่าห่วงมากแล้วให้โทนแดงเข้มสุด
+const PROBATION_TONE_CLS = {
+  notice: 'bg-gold-50 text-gold-700',
+  warn: 'bg-warn-bg text-warn-fg',
+  critical: 'bg-bad-bg text-bad-fg',
+};
+function probationTone(count) {
+  if (count >= 3) return 'critical';
+  if (count === 2) return 'warn';
+  return 'notice';
+}
 
 // รับ initialStudentId เผื่อมาจากปุ่ม "ดูประวัติ" ในหน้า Dashboard/Report — ถ้าไม่มี
 // ก็ใช้เป็นหน้าค้นหาอิสระได้ตามปกติ
@@ -35,6 +50,20 @@ export default function StudentProfile({ initialStudentId }) {
   // src/components/ProbationModal.jsx) ไม่เขียนฟอร์มแยกซ้ำที่นี่อีก
   const [probationByStudent, setProbationByStudent] = useState({});
   const [addingProbationFor, setAddingProbationFor] = useState(null); // { studentId, studentName } | null
+
+  // การ์ด "นักเรียนที่มีประวัติทัณฑ์บน" แบ่งเป็นหมวดตามห้อง/ระดับชั้น พับเปิด-ปิด
+  // ได้ทีละหมวด (ดูเหตุผลเต็มที่ตัวแปร probationGroups ด้านล่าง) — เก็บเฉพาะ "หมวด
+  // ที่ถูกพับ" (ค่าเริ่มต้น = เปิดหมดทุกหมวด) แทนที่จะเก็บ "หมวดที่เปิด" เพราะ
+  // รายชื่อหมวดขึ้นกับข้อมูลที่ยังโหลดไม่เสร็จตอน mount ครั้งแรก ไม่รู้ล่วงหน้าว่า
+  // มีหมวดอะไรบ้างถึงจะเซ็ตค่าเริ่มต้นเป็น true ให้ครบทุกหมวดได้
+  const [collapsedProbationGroups, setCollapsedProbationGroups] = useState(() => new Set());
+  const toggleProbationGroup = (key) => {
+    setCollapsedProbationGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
 
   const fetchRecords = async (showSpinner = true) => {
     if (showSpinner) setIsLoading(true);
@@ -162,6 +191,23 @@ export default function StudentProfile({ initialStudentId }) {
   // ตามคะแนนสะสมมากไปน้อยอยู่แล้ว) กรองเอาเฉพาะคนที่มีอยู่ใน probationByStudent
   const probationStudents = students.filter((s) => (probationByStudent[s.studentId]?.length || 0) > 0);
 
+  // จัดกลุ่มตามห้อง/ระดับชั้น (s.level เช่น "ปวช. ปี 2/2") แทนลิสต์แบนยาวๆ — ครู
+  // งานปกครองคิดเป็นห้องอยู่แล้วเวลาต้องติดตาม ถ้ามีนักเรียนทำทัณฑ์บนเยอะขึ้นในอนาคต
+  // (สมมติเกิน 20 คนทั้งโรงเรียน) แต่ละห้องก็ยังสั้นเองตามธรรมชาติ ไม่ต้องมีเพดาน/
+  // แบ่งหน้าแยกอีกชั้น — เรียงชื่อห้องตามตัวอักษรไทยให้อ่านง่าย (ปวช. ปี 1 ขึ้นก่อน)
+  const probationGroups = [];
+  {
+    const byLevel = new Map();
+    probationStudents.forEach((s) => {
+      const key = s.level || 'ไม่ระบุระดับชั้น';
+      if (!byLevel.has(key)) byLevel.set(key, []);
+      byLevel.get(key).push(s);
+    });
+    [...byLevel.keys()].sort((a, b) => a.localeCompare(b, 'th')).forEach((level) => {
+      probationGroups.push({ level, list: byLevel.get(level) });
+    });
+  }
+
   // จัดกลุ่มประวัติตามปีการศึกษา (ปีล่าสุดก่อน) ให้เห็นชัดว่าคะแนนสะสมด้านบนนับ
   // จากปีไหน ส่วนปีก่อนหน้ายังดูประวัติได้แต่ไม่ถูกนับรวมในคะแนนสะสมแล้ว
   const historyGroups = [];
@@ -262,23 +308,47 @@ export default function StudentProfile({ initialStudentId }) {
               {probationStudents.length} คน
             </span>
           </div>
-          <div className="mt-2 divide-y divide-line-soft">
-            {probationStudents.map((s) => (
-              <button
-                key={s.studentId}
-                type="button"
-                onClick={() => setSelectedId(s.studentId)}
-                className="w-full flex items-center gap-3 py-3 text-left rounded-[12px] px-2 -mx-2 hover:bg-line-soft/70 transition-colors"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="text-[13.5px] font-semibold text-ink truncate">{s.name}</p>
-                  <p className="mt-0.5 text-[11.5px] text-ink-mute">{s.level} · {s.studentId}</p>
+          <div className="mt-1 flex flex-col">
+            {probationGroups.map(({ level, list }) => {
+              const collapsed = collapsedProbationGroups.has(level);
+              return (
+                <div key={level} className="border-t border-line-soft first:border-t-0">
+                  <button
+                    type="button"
+                    onClick={() => toggleProbationGroup(level)}
+                    className="w-full flex items-center gap-2 py-2.5 text-left"
+                  >
+                    <ChevronDown size={14} className={`shrink-0 text-ink-faint transition-transform ${collapsed ? '-rotate-90' : ''}`} />
+                    <span className="text-[12.5px] font-bold text-ink-soft">{level}</span>
+                    <span className="text-[11.5px] text-ink-faint">({list.length} คน)</span>
+                  </button>
+                  {!collapsed && (
+                    <div className="pl-[22px] pb-1 divide-y divide-line-soft">
+                      {list.map((s) => {
+                        const count = probationByStudent[s.studentId].length;
+                        const tone = probationTone(count);
+                        return (
+                          <button
+                            key={s.studentId}
+                            type="button"
+                            onClick={() => setSelectedId(s.studentId)}
+                            className="w-full flex items-center gap-3 py-2.5 text-left rounded-[12px] px-2 -mx-2 hover:bg-line-soft/70 transition-colors"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[13.5px] font-semibold text-ink truncate">{s.name}</p>
+                              <p className="mt-0.5 text-[11.5px] text-ink-mute">{s.studentId}</p>
+                            </div>
+                            <span className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-bold ${PROBATION_TONE_CLS[tone]}`}>
+                              <ShieldAlert size={11} /> {count} ครั้ง
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-                <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-bad-bg/70 text-bad-fg px-2.5 py-1 text-[11.5px] font-bold">
-                  <ShieldAlert size={11} /> {probationByStudent[s.studentId].length} ครั้ง
-                </span>
-              </button>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

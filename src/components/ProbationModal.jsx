@@ -19,8 +19,17 @@ export default function ProbationModal({ student, onClose, onSaved }) {
     e.preventDefault();
     setSaving(true);
     try {
+      // 🐛 เดิมไม่ส่งชื่อผู้บันทึกมาเลย ฝั่งเซิร์ฟเวอร์เลยใช้ session.username (ชื่อ
+      // บัญชีล็อกอิน เช่น "admin") เก็บลงคอลัมน์ "บันทึกโดย" แทน — ไม่ตรงกับหน้า
+      // "รายงาน"/"ประวัติตัดคะแนน" ที่โชว์ชื่อ-นามสกุลจริงของครู (teacherName ส่งมา
+      // จากฝั่งเว็บเหมือนกัน ดู DeductionForm.jsx) ส่งชื่อเต็มมาด้วยให้ตรงแพตเทิร์น
+      // เดียวกัน — session.username ยังใช้กับ audit log ฝั่งเซิร์ฟเวอร์เหมือนเดิม
+      // (ดู Service_Probation.gs) เพราะอันนั้นต้องอิงตัวตนที่ยืนยันแล้วจริงๆ
+      const stored = localStorage.getItem('currentUser');
+      const currentUser = stored ? JSON.parse(stored) : null;
+
       const result = await callAPI('addProbationRecord', {
-        data: { studentId: student.studentId, studentName: student.studentName, date, note },
+        data: { studentId: student.studentId, studentName: student.studentName, date, note, recordedByName: currentUser?.name },
       });
       if (result.status === 'success') {
         Swal.fire({ icon: 'success', title: 'บันทึกแล้ว', timer: 1200, showConfirmButton: false });

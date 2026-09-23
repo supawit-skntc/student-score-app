@@ -55,12 +55,19 @@ function addProbationRecord(token, data) {
   // ด้วย <input type="date"> ไว้แล้วก็ตาม เพราะมีคนเรียก action นี้ตรงๆ ข้าม UI
   // ได้เสมอถ้ามี token ที่ถูกต้อง (ห้ามเชื่อฝั่งเว็บฝ่ายเดียว — หลักการเดียวกับที่
   // ใช้กับ studentName/note อยู่แล้ว)
+  // 🐛 เดิมเก็บ session.username (ชื่อบัญชีล็อกอิน เช่น "admin") ลงคอลัมน์นี้ตรงๆ
+  // ไม่ตรงกับหน้า "รายงาน"/ประวัติตัดคะแนนที่โชว์ชื่อ-นามสกุลจริงของครู (คอลัมน์
+  // teacherName ในชีต Records รับค่าจากฝั่งเว็บเหมือนกัน ดู addRecord ใน
+  // Service_Records.gs) — ใช้ recordedByName ที่ฝั่งเว็บส่งมาแทน (ProbationModal.jsx
+  // อ่านจาก currentUser ใน localStorage) fallback กลับไปที่ username ถ้าไม่มีมา
+  // เผื่อเซสชันเก่า/เรียก API ตรงๆ ข้าม UI — session.username ยังใช้กับ logAudit
+  // ด้านล่างเหมือนเดิมเพราะต้องอิงตัวตนที่ยืนยันแล้วจริงๆ ไม่ใช่ชื่อที่ฝั่งเว็บส่งมา
   sheet.appendRow([
     new Date().toISOString(),
     studentId,
     sanitizeForSheetCell_((data && data.studentName) || ''),
     sanitizeForSheetCell_((data && data.date) || ''),
-    session.username,
+    sanitizeForSheetCell_((data && data.recordedByName) || session.username),
     sanitizeForSheetCell_((data && data.note) || ''),
   ]);
   invalidateProbationCache_();
