@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Search, FileText, UserRound, Inbox, Trash2, ShieldAlert, Plus, ChevronDown } from 'lucide-react';
+import { Loader2, Search, FileText, UserRound, Inbox, Trash2, ShieldAlert, Plus, ChevronDown, Edit } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
 import { statusForPoints } from '../data/thresholds';
@@ -50,6 +50,7 @@ export default function StudentProfile({ initialStudentId }) {
   // src/components/ProbationModal.jsx) ไม่เขียนฟอร์มแยกซ้ำที่นี่อีก
   const [probationByStudent, setProbationByStudent] = useState({});
   const [addingProbationFor, setAddingProbationFor] = useState(null); // { studentId, studentName } | null
+  const [editingProbation, setEditingProbation] = useState(null); // { id, date, note } | null
 
   // การ์ด "นักเรียนที่มีประวัติทัณฑ์บน" แบ่งเป็นหมวดตามห้อง/ระดับชั้น พับเปิด-ปิด
   // ได้ทีละหมวด (ดูเหตุผลเต็มที่ตัวแปร probationGroups ด้านล่าง) — เก็บเฉพาะ "หมวด
@@ -135,6 +136,35 @@ export default function StudentProfile({ initialStudentId }) {
         if (res.status === 'success') {
           Swal.fire({ icon: 'success', title: 'ลบแล้ว', timer: 1200, showConfirmButton: false });
           fetchRecords();
+        } else {
+          Swal.fire('ข้อผิดพลาด', res.message, 'error');
+        }
+      } catch {
+        Swal.fire('ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
+      }
+    });
+  };
+
+  // ลบรายการทัณฑ์บน — คนละ action กับ handleDeleteRecord ด้านบน (ลบแถวจริงในชีต
+  // Probation ไม่ใช่ soft delete แบบ Records ดูเหตุผลเต็มที่ deleteProbationRecord
+  // ใน Service_Probation.gs)
+  const handleDeleteProbation = (p) => {
+    Swal.fire({
+      title: 'ลบรายการทัณฑ์บนนี้?',
+      html: `${escapeHtml(p.displayDate || '')}` + (p.note ? `<br/>${escapeHtml(p.note)}` : ''),
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#E11D48',
+      cancelButtonColor: '#94A3B8',
+      confirmButtonText: 'ลบรายการ',
+      cancelButtonText: 'ยกเลิก',
+    }).then(async (result) => {
+      if (!result.isConfirmed) return;
+      try {
+        const res = await callAPI('deleteProbationRecord', { id: p.id });
+        if (res.status === 'success') {
+          Swal.fire({ icon: 'success', title: 'ลบแล้ว', timer: 1200, showConfirmButton: false });
+          fetchProbationStatus();
         } else {
           Swal.fire('ข้อผิดพลาด', res.message, 'error');
         }
@@ -433,7 +463,32 @@ export default function StudentProfile({ initialStudentId }) {
                       <p className="text-[13.5px] font-semibold text-ink">{p.displayDate || 'ไม่ระบุวันที่'}</p>
                       {p.note && <p className="mt-0.5 text-xs text-ink-mute truncate">{p.note}</p>}
                     </div>
-                    <span className="shrink-0 text-[11px] text-ink-faint">บันทึกโดย {p.recordedBy}</span>
+                    <div className="shrink-0 flex items-center gap-2">
+                      <span className="text-[11px] text-ink-faint">บันทึกโดย {p.recordedBy}</span>
+                      {/* ปุ่มแก้ไข/ลบ — ต้องมีทั้งสิทธิ์ (canManageProbation) และมี id
+                          (รายการเก่าก่อนมีฟีเจอร์นี้ไม่มี id เลยแก้ไข/ลบผ่านหน้าเว็บ
+                          ไม่ได้ ดู findProbationRowIndexById_ ใน Service_Probation.gs) */}
+                      {canManageProbation && p.id && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setEditingProbation(p)}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] text-gold-700 bg-gold-50 hover:bg-gold-100 transition-colors"
+                            title="แก้ไขรายการนี้"
+                          >
+                            <Edit size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteProbation(p)}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] text-bad-fg bg-bad-bg hover:brightness-95 transition-all"
+                            title="ลบรายการนี้"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -503,6 +558,15 @@ export default function StudentProfile({ initialStudentId }) {
         <ProbationModal
           student={addingProbationFor}
           onClose={() => setAddingProbationFor(null)}
+          onSaved={fetchProbationStatus}
+        />
+      )}
+
+      {editingProbation && selected && (
+        <ProbationModal
+          student={{ studentId: selected.studentId, studentName: selected.name }}
+          editing={editingProbation}
+          onClose={() => setEditingProbation(null)}
           onSaved={fetchProbationStatus}
         />
       )}

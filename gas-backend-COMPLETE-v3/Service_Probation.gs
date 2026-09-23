@@ -26,9 +26,27 @@ function setupProbationSheet() {
     return;
   }
   const sheet = ss.insertSheet("Probation");
-  sheet.appendRow(["เวลาที่บันทึก", "รหัสนักเรียน", "ชื่อ-นามสกุล", "วันที่ทำทัณฑ์บน", "บันทึกโดย", "หมายเหตุ"]);
-  sheet.getRange(1, 1, 1, 6).setFontWeight("bold");
+  sheet.appendRow(["เวลาที่บันทึก", "รหัสนักเรียน", "ชื่อ-นามสกุล", "วันที่ทำทัณฑ์บน", "บันทึกโดย", "หมายเหตุ", "รหัสรายการ"]);
+  sheet.getRange(1, 1, 1, 7).setFontWeight("bold");
   Logger.log("สร้างชีต Probation เรียบร้อยแล้ว");
+}
+
+// หาแถวจริงในชีต (เลขแถว 1-indexed) จาก "รหัสรายการ" คอลัมน์ G — ใช้กับทั้งแก้ไข
+// และลบ สแกนหาใหม่ทุกครั้งที่เรียก (ไม่แคชเลขแถว) เพราะถ้าลบแถวอื่นไปก่อนหน้านี้
+// เลขแถวของแถวที่เหลือจะเลื่อน แคชไว้แล้วจะผิดได้ — แบบเดียวกับ
+// findRecordRowIndexById_ ใน Service_Records.gs (คนละไฟล์กัน หลักการเดียวกัน)
+//
+// ⚠️ แถวที่บันทึกไว้ "ก่อน" ที่จะมีคอลัมน์นี้ (ของเก่าก่อนอัปเดตฟีเจอร์แก้ไข/ลบ)
+// จะไม่มีรหัสรายการเลย หาไม่เจอ แก้ไข/ลบผ่านหน้าเว็บไม่ได้ — ต้องไปแก้/ลบในชีต
+// ด้วยมือแทนสำหรับแถวเก่ากลุ่มนี้เท่านั้น แถวใหม่ที่บันทึกหลังจากนี้ไม่มีปัญหา
+function findProbationRowIndexById_(sheet, id) {
+  const idStr = String(id || '').trim();
+  if (!idStr) return null;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][6] || '') === idStr) return i + 1;
+  }
+  return null;
 }
 
 const PROBATION_CACHE_KEY = 'probation_by_student_v1';
@@ -69,11 +87,59 @@ function addProbationRecord(token, data) {
     sanitizeForSheetCell_((data && data.date) || ''),
     sanitizeForSheetCell_((data && data.recordedByName) || session.username),
     sanitizeForSheetCell_((data && data.note) || ''),
+    Utilities.getUuid(),
   ]);
   invalidateProbationCache_();
 
   logAudit(session.username, "ADD_PROBATION", studentId, "SUCCESS");
   return { status: "success", message: "บันทึกทัณฑ์บนเรียบร้อยแล้ว" };
+}
+
+// ==========================================
+// แก้ไขวันที่/หมายเหตุของรายการทัณฑ์บนที่มีอยู่แล้ว — สิทธิ์เดียวกับตอนเพิ่ม
+// (แอดมิน/กลุ่มเห็นทุกรายการ) ไม่เปิดให้แก้ studentId/studentName/recordedBy
+// เพราะถ้าบันทึกผิดคนไปเลย วิธีแก้ที่ถูกต้องคือลบทิ้งแล้วเพิ่มใหม่ ไม่ใช่ "ย้าย"
+// รายการไปเป็นของนักเรียนคนอื่น (ป้องกันความสับสนของประวัติ)
+// ==========================================
+function updateProbationRecord(token, data) {
+  const session = requireDisciplineStaff_(token);
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Probation");
+  if (!sheet) return { status: "error", message: "ยังไม่ได้ตั้งค่าชีต Probation" };
+
+  const rowIndex = findProbationRowIndexById_(sheet, data && data.id);
+  if (rowIndex === null) return { status: "error", message: "ไม่พบรายการที่ต้องการแก้ไข (อาจเป็นรายการเก่าก่อนมีฟีเจอร์นี้)" };
+
+  sheet.getRange(rowIndex, 4).setValue(sanitizeForSheetCell_((data && data.date) || ''));
+  sheet.getRange(rowIndex, 6).setValue(sanitizeForSheetCell_((data && data.note) || ''));
+  invalidateProbationCache_();
+
+  const studentId = String(sheet.getRange(rowIndex, 2).getValue() || '');
+  logAudit(session.username, "UPDATE_PROBATION", studentId, "SUCCESS");
+  return { status: "success", message: "แก้ไขข้อมูลทัณฑ์บนเรียบร้อยแล้ว" };
+}
+
+// ==========================================
+// ลบรายการทัณฑ์บน — ลบแถวออกจากชีตจริง (ไม่ใช่ soft delete แบบชีต Records) เพราะ
+// ฟีเจอร์นี้ไม่มีการ sync เข้า RMS/สร้าง PDF ผูกอยู่ด้วยเหมือนรายการตัดคะแนน ไม่มี
+// ปมอะไรต้องรักษาไว้เทียบเคียง — การกระทำนี้ยังถูกบันทึกใน Audit_Logs ผ่าน
+// logAudit ด้านล่างอยู่ดี ตรวจสอบย้อนหลังได้ว่าใครลบอะไรไปเมื่อไร
+// ==========================================
+function deleteProbationRecord(token, id) {
+  const session = requireDisciplineStaff_(token);
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Probation");
+  if (!sheet) return { status: "error", message: "ยังไม่ได้ตั้งค่าชีต Probation" };
+
+  const rowIndex = findProbationRowIndexById_(sheet, id);
+  if (rowIndex === null) return { status: "error", message: "ไม่พบรายการที่ต้องการลบ (อาจเป็นรายการเก่าก่อนมีฟีเจอร์นี้)" };
+
+  const studentId = String(sheet.getRange(rowIndex, 2).getValue() || '');
+  sheet.deleteRow(rowIndex);
+  invalidateProbationCache_();
+
+  logAudit(session.username, "DELETE_PROBATION", studentId, "SUCCESS");
+  return { status: "success", message: "ลบรายการทัณฑ์บนเรียบร้อยแล้ว" };
 }
 
 // ==========================================
@@ -111,6 +177,10 @@ function getProbationStatus(token) {
     // object และ string อยู่แล้ว)
     const rawDate = data[i][3];
     byStudent[studentId].push({
+      // 🆕 id (คอลัมน์ G) — ใช้กับปุ่มแก้ไข/ลบฝั่งเว็บ (ดู findProbationRowIndexById_
+      // ด้านบน) แถวเก่าก่อนมีคอลัมน์นี้จะได้ '' ว่างไป ฝั่งเว็บซ่อนปุ่มแก้ไข/ลบให้
+      // อัตโนมัติเมื่อไม่มี id (ดู StudentProfile.jsx)
+      id: String(data[i][6] || ''),
       date: rawDate ? toIsoDateString_(rawDate) : '',
       displayDate: formatThaiDate_(rawDate),
       recordedBy: String(data[i][4] || ''),

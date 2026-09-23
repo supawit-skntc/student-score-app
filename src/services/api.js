@@ -1,7 +1,7 @@
 // src/services/api.js
 
 // URL ของ Google Apps Script (Web App) จากระบบเดิมของคุณ
-const GAS_API_URL = "https://script.google.com/macros/s/AKfycbw3kcF6YNAm_lq_UrLLL5YoCtY1wrJPo8AlLh2VSWLJbnRfB8cgJXYtF2jR8fOXVZtP/exec";
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwTJpe0M6hqiPkCEA_JV-vB5D0jHzNny1eFPwrUaw7VpvjFXrHcmPZrQWKH3rxdWS3U/exec";
 
 // Google เด้งหน้า HTML กลับมาแทน JSON เป็นครั้งคราวโดยไม่มีสาเหตุจากโค้ดเราเลย
 // (เจอมาแล้วหลายครั้ง ทั้งฝั่งเว็บนี้และฝั่งบอท RPA) ลองใหม่อัตโนมัติสั้นๆ ก่อนจะ
@@ -56,7 +56,7 @@ function getStoredToken() {
 // มาก และล้างแคชทั้งหมดทันทีเมื่อมี action เขียนข้อมูลสำเร็จ (ปลอดภัยไว้ก่อน ไม่
 // ต้องคิดว่า action ไหนกระทบ cache key ไหนบ้าง)
 const READ_CACHEABLE_ACTIONS = new Set(['getRecords', 'getMyRecords', 'getUsers', 'getAuditLogs', 'getRpaStats', 'getOffenses', 'getRoleTiers', 'getProbationStatus']);
-const WRITE_ACTIONS = new Set(['addRecord', 'updateRecord', 'deleteRecord', 'createUser', 'updateUser', 'deleteUser', 'generateRecordPdf', 'addProbationRecord']);
+const WRITE_ACTIONS = new Set(['addRecord', 'updateRecord', 'deleteRecord', 'createUser', 'updateUser', 'deleteUser', 'generateRecordPdf', 'addProbationRecord', 'updateProbationRecord', 'deleteProbationRecord']);
 const READ_CACHE_TTL_MS = 15000;
 
 // 'getOffenses'/'getRoleTiers' แทบไม่เปลี่ยนเลย (ผูกกับระเบียบวิทยาลัย/เทมเพลต

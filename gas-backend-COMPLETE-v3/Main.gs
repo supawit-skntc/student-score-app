@@ -47,6 +47,12 @@ function doPost(e) {
       case "addProbationRecord":
         response = addProbationRecord(token, requestBody.data);
         break;
+      case "updateProbationRecord":
+        response = updateProbationRecord(token, requestBody.data);
+        break;
+      case "deleteProbationRecord":
+        response = deleteProbationRecord(token, requestBody.id);
+        break;
 
       // ===== ผู้ดูแลระบบเท่านั้น =====
       case "getUsers":

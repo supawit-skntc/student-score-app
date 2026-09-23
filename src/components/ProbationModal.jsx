@@ -10,29 +10,41 @@ import { todayLocalISO } from '../utils/date';
 // แล้วว่าใครต้องทำ (เช่น จากการ์ด "นักเรียนที่ถึงเกณฑ์" ในแดชบอร์ด) ไม่ควรต้องไป
 // ค้นหาซ้ำอีกรอบ (ฟีดแบ็กจากผู้ใช้งานจริง: หาปุ่มไม่เจอ + ขั้นตอนเยอะเกินไป) —
 // รับแค่ student ({studentId, studentName}) มาจากหน้าไหนก็ได้
-export default function ProbationModal({ student, onClose, onSaved }) {
-  const [date, setDate] = useState(todayLocalISO());
-  const [note, setNote] = useState('');
+//
+// editing (ไม่บังคับ) — ถ้าส่งมา ({id, date, note}) โมดัลนี้จะสลับเป็นโหมด "แก้ไข"
+// รายการที่มีอยู่แล้วแทนการเพิ่มใหม่ ใช้ฟอร์มร่วมกันเพราะมีแค่ 2 ช่อง (วันที่/
+// หมายเหตุ) ไม่คุ้มที่จะแยกไฟล์คอมโพเนนต์ต่างหากเหมือน EditRecordModal.jsx ที่ฟอร์ม
+// ใหญ่กว่ามาก — แก้ได้แค่วันที่/หมายเหตุเท่านั้น ไม่แก้ studentId/studentName/
+// recordedBy (ดูเหตุผลเต็มที่ updateProbationRecord ใน Service_Probation.gs)
+export default function ProbationModal({ student, editing, onClose, onSaved }) {
+  const isEditing = !!editing;
+  const [date, setDate] = useState(editing ? editing.date : todayLocalISO());
+  const [note, setNote] = useState(editing ? editing.note || '' : '');
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
-      // 🐛 เดิมไม่ส่งชื่อผู้บันทึกมาเลย ฝั่งเซิร์ฟเวอร์เลยใช้ session.username (ชื่อ
-      // บัญชีล็อกอิน เช่น "admin") เก็บลงคอลัมน์ "บันทึกโดย" แทน — ไม่ตรงกับหน้า
-      // "รายงาน"/"ประวัติตัดคะแนน" ที่โชว์ชื่อ-นามสกุลจริงของครู (teacherName ส่งมา
-      // จากฝั่งเว็บเหมือนกัน ดู DeductionForm.jsx) ส่งชื่อเต็มมาด้วยให้ตรงแพตเทิร์น
-      // เดียวกัน — session.username ยังใช้กับ audit log ฝั่งเซิร์ฟเวอร์เหมือนเดิม
-      // (ดู Service_Probation.gs) เพราะอันนั้นต้องอิงตัวตนที่ยืนยันแล้วจริงๆ
-      const stored = localStorage.getItem('currentUser');
-      const currentUser = stored ? JSON.parse(stored) : null;
-
-      const result = await callAPI('addProbationRecord', {
-        data: { studentId: student.studentId, studentName: student.studentName, date, note, recordedByName: currentUser?.name },
-      });
+      let result;
+      if (isEditing) {
+        result = await callAPI('updateProbationRecord', { data: { id: editing.id, date, note } });
+      } else {
+        // 🐛 เดิมไม่ส่งชื่อผู้บันทึกมาเลย ฝั่งเซิร์ฟเวอร์เลยใช้ session.username (ชื่อ
+        // บัญชีล็อกอิน เช่น "admin") เก็บลงคอลัมน์ "บันทึกโดย" แทน — ไม่ตรงกับหน้า
+        // "รายงาน"/"ประวัติตัดคะแนน" ที่โชว์ชื่อ-นามสกุลจริงของครู (teacherName
+        // ส่งมาจากฝั่งเว็บเหมือนกัน ดู DeductionForm.jsx) ส่งชื่อเต็มมาด้วยให้ตรง
+        // แพตเทิร์นเดียวกัน — session.username ยังใช้กับ audit log ฝั่งเซิร์ฟเวอร์
+        // เหมือนเดิม (ดู Service_Probation.gs) เพราะอันนั้นต้องอิงตัวตนที่ยืนยัน
+        // แล้วจริงๆ
+        const stored = localStorage.getItem('currentUser');
+        const currentUser = stored ? JSON.parse(stored) : null;
+        result = await callAPI('addProbationRecord', {
+          data: { studentId: student.studentId, studentName: student.studentName, date, note, recordedByName: currentUser?.name },
+        });
+      }
       if (result.status === 'success') {
-        Swal.fire({ icon: 'success', title: 'บันทึกแล้ว', timer: 1200, showConfirmButton: false });
+        Swal.fire({ icon: 'success', title: isEditing ? 'แก้ไขแล้ว' : 'บันทึกแล้ว', timer: 1200, showConfirmButton: false });
         if (onSaved) onSaved();
         onClose();
       } else {
@@ -55,7 +67,7 @@ export default function ProbationModal({ student, onClose, onSaved }) {
               <ShieldAlert size={17} strokeWidth={2.25} />
             </div>
             <div className="min-w-0">
-              <h2 className="font-display text-[16px] font-medium text-ink">บันทึกทัณฑ์บน</h2>
+              <h2 className="font-display text-[16px] font-medium text-ink">{isEditing ? 'แก้ไขทัณฑ์บน' : 'บันทึกทัณฑ์บน'}</h2>
               <p className="text-[12.5px] text-ink-mute mt-0.5 truncate">{student.studentName} · {student.studentId}</p>
             </div>
           </div>
@@ -100,7 +112,7 @@ export default function ProbationModal({ student, onClose, onSaved }) {
               className="flex-1 min-h-[50px] rounded-[15px] bg-gradient-to-b from-brand-600 to-brand-700 text-white font-display font-medium hover:from-brand-500 hover:to-brand-600 flex items-center justify-center gap-2 transition-colors disabled:from-brand-400 disabled:to-brand-400"
             >
               {saving ? <Loader2 className="animate-spin" size={19} /> : null}
-              {saving ? 'กำลังบันทึก...' : 'ยืนยันบันทึก'}
+              {saving ? 'กำลังบันทึก...' : isEditing ? 'บันทึกการแก้ไข' : 'ยืนยันบันทึก'}
             </button>
           </div>
         </form>
