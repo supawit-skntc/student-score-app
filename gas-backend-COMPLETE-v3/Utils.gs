@@ -87,7 +87,12 @@ function getChunkedCache_(key) {
 
 function logAudit(user, action, targetId, status) {
   try {
-    const sheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName("Audit_Logs");
+    // getActiveSpreadsheet() (ชีตเดียวกับที่ handler ส่วนใหญ่เปิดอยู่แล้วก่อนเรียกมาถึงที่นี่)
+    // แทน openById(CONFIG.SPREADSHEET_ID) ที่ต้องเปิดไฟล์ใหม่อีกรอบทุกครั้งที่เขียน
+    // audit — logAudit ถูกเรียกท้ายทุก action เขียนข้อมูล (ลบ/แก้ไข/เพิ่ม) จึงเป็น
+    // ต้นทุนที่ต่อท้ายทุกครั้ง ผลเป็นชีตเดียวกันเสมอเพราะ CONFIG.SPREADSHEET_ID
+    // ก็มาจาก getActiveSpreadsheet() อยู่แล้ว (ดู Config.gs)
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Audit_Logs");
     sheet.appendRow([new Date().toISOString(), user, action, targetId, status]);
     // 🔄 ล้างแคช getAuditLogs() ทันที (ดูด้านล่าง) — logAudit ถูกเรียกจากแทบทุก
     // action ที่เขียนข้อมูล เป็นจุดเดียวที่คุมทุกการเขียนลงชีตนี้อยู่แล้ว จึงล้าง

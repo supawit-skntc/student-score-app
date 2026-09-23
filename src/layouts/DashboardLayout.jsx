@@ -93,7 +93,7 @@ export default function DashboardLayout({ children, setView, view = 'dashboard' 
         : 'text-brand-50/85 hover:bg-white/10 hover:text-white'}`;
 
   return (
-    <div className="h-screen bg-canvas flex font-sans">
+    <div className="h-dvh bg-canvas flex font-sans">
 
       {/* --- Sidebar: desktop only (md+); mobile uses the bottom tab bar instead --- */}
       <aside className="hidden md:flex md:flex-col w-[262px] shrink-0 bg-gradient-to-b from-brand-800 to-brand-900 text-white">
@@ -147,7 +147,7 @@ export default function DashboardLayout({ children, setView, view = 'dashboard' 
       </aside>
 
       {/* --- Main column --- */}
-      <div className="flex-1 flex flex-col h-screen overflow-hidden min-w-0">
+      <div className="flex-1 flex flex-col h-dvh overflow-hidden min-w-0">
 
         <header className="bg-white flex items-center justify-between gap-4 px-3.5 md:px-6 py-3 md:py-4 border-b border-line shrink-0">
           <div className="flex items-center gap-3 min-w-0">

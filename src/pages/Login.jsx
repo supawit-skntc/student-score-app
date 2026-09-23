@@ -46,7 +46,7 @@ export default function Login({ setView }) {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-5 py-9 font-sans bg-[radial-gradient(120%_90%_at_15%_0%,#742537_0%,#4A1624_45%,#38101A_100%)]">
+    <div className="relative flex min-h-dvh items-center justify-center overflow-hidden px-5 py-9 font-sans bg-[radial-gradient(120%_90%_at_15%_0%,#742537_0%,#4A1624_45%,#38101A_100%)]">
 
       {/* ambient brand texture */}
       <div className="pointer-events-none absolute -top-[140px] -left-[120px] h-[420px] w-[420px] rounded-full bg-gold-500/[0.16] blur-[70px]" />

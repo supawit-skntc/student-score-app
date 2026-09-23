@@ -33,7 +33,7 @@ function setupProbationSheet() {
 
 // รันครั้งเดียวจาก Apps Script Editor (เลือกฟังก์ชันนี้แล้วกด Run) เพื่อเติม
 // "รหัสรายการ" (คอลัมน์ G) ให้แถวเก่าที่บันทึกไว้ก่อนมีคอลัมน์นี้ — ไม่งั้นแถวพวก
-// นั้นจะแก้ไข/ลบผ่านหน้าเว็บไม่ได้ตลอดไป (ดูคำอธิบายที่ findProbationRowIndexById_
+// นั้นจะแก้ไข/ลบผ่านหน้าเว็บไม่ได้ตลอดไป (ดูคำอธิบายที่ findProbationRowById_
 // ด้านล่าง) ปลอดภัยที่จะรันซ้ำได้เสมอ (ข้ามแถวที่มีรหัสอยู่แล้ว ไม่สร้างซ้ำ)
 function backfillProbationIds_() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Probation");
@@ -61,12 +61,18 @@ function backfillProbationIds_() {
 // ⚠️ แถวที่บันทึกไว้ "ก่อน" ที่จะมีคอลัมน์นี้ (ของเก่าก่อนอัปเดตฟีเจอร์แก้ไข/ลบ)
 // จะไม่มีรหัสรายการเลย หาไม่เจอ แก้ไข/ลบผ่านหน้าเว็บไม่ได้ — รันฟังก์ชัน
 // backfillProbationIds_() ด้านบนครั้งเดียวจาก Apps Script Editor เพื่อแก้ปัญหานี้
-function findProbationRowIndexById_(sheet, id) {
+//
+// 🚀 คืน { rowIndex, studentId } ในรอบอ่านเดียวกันเลย — เดิมคืนแค่เลขแถว แล้วผู้เรียก
+// (แก้ไข/ลบ) ต้องเรียก getRange(...).getValue() อีก 1 รอบไปที่ Sheets เพื่อเอา
+// รหัสนักเรียนไปลง audit log ทั้งที่ข้อมูลอยู่ในมือแล้วจากการสแกนนี้
+function findProbationRowById_(sheet, id) {
   const idStr = String(id || '').trim();
   if (!idStr) return null;
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
-    if (String(data[i][6] || '') === idStr) return i + 1;
+    if (String(data[i][6] || '') === idStr) {
+      return { rowIndex: i + 1, studentId: String(data[i][1] || '') };
+    }
   }
   return null;
 }
@@ -129,15 +135,14 @@ function updateProbationRecord(token, data) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Probation");
   if (!sheet) return { status: "error", message: "ยังไม่ได้ตั้งค่าชีต Probation" };
 
-  const rowIndex = findProbationRowIndexById_(sheet, data && data.id);
-  if (rowIndex === null) return { status: "error", message: "ไม่พบรายการที่ต้องการแก้ไข (อาจเป็นรายการเก่าก่อนมีฟีเจอร์นี้)" };
+  const found = findProbationRowById_(sheet, data && data.id);
+  if (found === null) return { status: "error", message: "ไม่พบรายการที่ต้องการแก้ไข (อาจเป็นรายการเก่าก่อนมีฟีเจอร์นี้)" };
 
-  sheet.getRange(rowIndex, 4).setValue(sanitizeForSheetCell_((data && data.date) || ''));
-  sheet.getRange(rowIndex, 6).setValue(sanitizeForSheetCell_((data && data.note) || ''));
+  sheet.getRange(found.rowIndex, 4).setValue(sanitizeForSheetCell_((data && data.date) || ''));
+  sheet.getRange(found.rowIndex, 6).setValue(sanitizeForSheetCell_((data && data.note) || ''));
   invalidateProbationCache_();
 
-  const studentId = String(sheet.getRange(rowIndex, 2).getValue() || '');
-  logAudit(session.username, "UPDATE_PROBATION", studentId, "SUCCESS");
+  logAudit(session.username, "UPDATE_PROBATION", found.studentId, "SUCCESS");
   return { status: "success", message: "แก้ไขข้อมูลทัณฑ์บนเรียบร้อยแล้ว" };
 }
 
@@ -153,14 +158,13 @@ function deleteProbationRecord(token, id) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Probation");
   if (!sheet) return { status: "error", message: "ยังไม่ได้ตั้งค่าชีต Probation" };
 
-  const rowIndex = findProbationRowIndexById_(sheet, id);
-  if (rowIndex === null) return { status: "error", message: "ไม่พบรายการที่ต้องการลบ (อาจเป็นรายการเก่าก่อนมีฟีเจอร์นี้)" };
+  const found = findProbationRowById_(sheet, id);
+  if (found === null) return { status: "error", message: "ไม่พบรายการที่ต้องการลบ (อาจเป็นรายการเก่าก่อนมีฟีเจอร์นี้)" };
 
-  const studentId = String(sheet.getRange(rowIndex, 2).getValue() || '');
-  sheet.deleteRow(rowIndex);
+  sheet.deleteRow(found.rowIndex);
   invalidateProbationCache_();
 
-  logAudit(session.username, "DELETE_PROBATION", studentId, "SUCCESS");
+  logAudit(session.username, "DELETE_PROBATION", found.studentId, "SUCCESS");
   return { status: "success", message: "ลบรายการทัณฑ์บนเรียบร้อยแล้ว" };
 }
 
@@ -199,7 +203,7 @@ function getProbationByStudent_() {
     // object และ string อยู่แล้ว)
     const rawDate = data[i][3];
     byStudent[studentId].push({
-      // 🆕 id (คอลัมน์ G) — ใช้กับปุ่มแก้ไข/ลบฝั่งเว็บ (ดู findProbationRowIndexById_
+      // 🆕 id (คอลัมน์ G) — ใช้กับปุ่มแก้ไข/ลบฝั่งเว็บ (ดู findProbationRowById_
       // ด้านบน) แถวเก่าก่อนมีคอลัมน์นี้จะได้ '' ว่างไป ฝั่งเว็บซ่อนปุ่มแก้ไข/ลบให้
       // อัตโนมัติเมื่อไม่มี id (ดู StudentProfile.jsx)
       id: String(data[i][6] || ''),

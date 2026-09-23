@@ -194,10 +194,17 @@ function invalidateRecordsCache_() {
 // Service_RpaBot.gs) มาไว้ที่เดียว กันแก้ตรงนึงแล้วลืมอีกตรงนึง
 // คืนค่า rowIndex แบบ 1-indexed (นับรวมหัวตาราง) หรือ null ถ้าไม่เจอ
 // ==========================================
+//
+// 🚀 อ่านเฉพาะคอลัมน์ A (id) ไม่ใช่ทั้งชีต 20 คอลัมน์แบบเดิม (getDataRange().
+// getValues()) — ใช้หาแค่ id เดียว ข้อมูลที่ต้องโอนจากเซิร์ฟเวอร์ Sheets ลดเหลือราว
+// 1/20 ทุกครั้งที่แก้ไข/ลบ/สร้าง PDF
 function findRecordRowIndexById_(sheet, id) {
-  const data = sheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][0]) === String(id)) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  const ids = sheet.getRange(1, 1, lastRow, 1).getValues();
+  const target = String(id);
+  for (let i = 1; i < ids.length; i++) {
+    if (String(ids[i][0]) === target) {
       return i + 1;
     }
   }
@@ -389,10 +396,26 @@ function deleteRecord(token, id) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
   if (!sheet) return { status: "error", message: "ไม่พบแผ่นงานข้อมูลระบบ" };
 
-  const rowIndex = findRecordRowIndexById_(sheet, id);
-  if (rowIndex === null) return { status: "error", message: "ไม่พบรายการที่ id นี้: " + id };
+  // 🚀 ลองตำแหน่งแถวจากแคชก่อน (getSyncQueue() เก็บไว้ให้บอท — ดู
+  // getCachedRecordRowIndex_) แล้ว "ยืนยัน" ด้วยการอ่านคอลัมน์ A-D ของแถวนั้นแถวเดียว
+  // ว่า id ตรงจริงก่อนลบ (ต้องอ่านคอลัมน์ D เอารหัสนักเรียนไปลง audit log อยู่แล้ว
+  // จึงไม่เสียรอบเพิ่ม) กันลบผิดรายการถ้าแคชเพี้ยน เช่น มีคนแทรกแถวในชีตด้วยมือ —
+  // ถ้าไม่ตรง/ไม่มีในแคช fallback ไปสแกนคอลัมน์ A ตามปกติ
+  // เดิมทำ 3 ขั้นต่อเนื่อง: อ่านทั้งชีต -> อ่านคอลัมน์ D -> เขียนคอลัมน์ R
+  let rowIndex = getCachedRecordRowIndex_(id);
+  let head = null; // [id, timestamp, date, studentId] ของแถวที่ยืนยันแล้ว
+  if (rowIndex !== null) {
+    const candidate = sheet.getRange(rowIndex, 1, 1, 4).getValues()[0];
+    if (String(candidate[0]) === String(id)) head = candidate;
+    else rowIndex = null;
+  }
+  if (head === null) {
+    rowIndex = findRecordRowIndexById_(sheet, id);
+    if (rowIndex === null) return { status: "error", message: "ไม่พบรายการที่ id นี้: " + id };
+    head = sheet.getRange(rowIndex, 1, 1, 4).getValues()[0];
+  }
 
-  const studentId = String(sheet.getRange(rowIndex, 4).getValue() || "");
+  const studentId = String(head[3] || "");
   sheet.getRange(rowIndex, 18).setValue(new Date().toISOString());
   invalidateRecordsCache_();
   logAudit(session.username, "DELETE_RECORD", studentId, "SUCCESS");

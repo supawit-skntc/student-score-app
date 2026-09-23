@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Loader2, Search, FileText, UserRound, Inbox, Trash2, ShieldAlert, Plus, ChevronDown, Edit } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
@@ -76,18 +76,32 @@ export default function StudentProfile({ initialStudentId }) {
     });
   };
 
+  // id ของรายการ/ทัณฑ์บนที่ลบไปแล้วในหน้านี้ — ใช้กรองผลโพลหรือการดึงข้อมูลที่ตอบกลับ
+  // มาช้ากว่าการลบ กันรายการที่ลบไปแล้วเด้งกลับมาโชว์ค้าง (ดู handleDeleteRecord)
+  const deletedRecordIdsRef = useRef(new Set());
+  const deletedProbationIdsRef = useRef(new Set());
+  const withoutDeletedProbation = (map) => {
+    if (deletedProbationIdsRef.current.size === 0) return map;
+    const next = {};
+    Object.keys(map).forEach((sid) => {
+      const list = map[sid].filter((x) => !deletedProbationIdsRef.current.has(x.id));
+      if (list.length) next[sid] = list;
+    });
+    return next;
+  };
+
   const fetchRecords = async (showSpinner = true) => {
     if (showSpinner) setIsLoading(true);
     try {
       const result = await callAPI('getRecords', {});
       if (result.status === 'success') {
-        setRecords(result.data || []);
+        setRecords((result.data || []).filter((r) => !deletedRecordIdsRef.current.has(r.id)));
         // 🚀 probationByStudent มากับคำตอบเดียวกันนี้แล้ว (ดู getRecords ใน
         // Service_Records.gs) ไม่ต้องยิง getProbationStatus แยกตอนโหลดหน้าอีก
         // ต่อไป — ลดจาก 2 round-trip เหลือ 1 ทุกครั้งที่เปิด/โพลหน้านี้ (ยังคง
         // เรียก fetchProbationStatus() แยกได้อยู่ ใช้ตอนอยากรีเฟรชป้ายทันทีหลัง
         // เพิ่ม/แก้ไข/ลบทัณฑ์บนโดยไม่ต้องโหลดรายการตัดคะแนนทั้งหมดซ้ำ)
-        if (result.probationByStudent) setProbationByStudent(result.probationByStudent);
+        if (result.probationByStudent) setProbationByStudent(withoutDeletedProbation(result.probationByStudent));
       } else if (showSpinner) {
         Swal.fire('ข้อผิดพลาด', result.message || 'ไม่สามารถดึงข้อมูลได้', 'error');
       }
@@ -101,7 +115,7 @@ export default function StudentProfile({ initialStudentId }) {
   const fetchProbationStatus = async () => {
     try {
       const result = await callAPI('getProbationStatus', {});
-      if (result.status === 'success') setProbationByStudent(result.data || {});
+      if (result.status === 'success') setProbationByStudent(withoutDeletedProbation(result.data || {}));
     } catch {
       // เงียบไว้ — ไม่ให้ป้ายทัณฑ์บนที่ดึงไม่สำเร็จไปรบกวนหน้าประวัติหลัก
     }
@@ -117,7 +131,10 @@ export default function StudentProfile({ initialStudentId }) {
     const stored = localStorage.getItem('currentUser');
     if (stored) setCurrentUser(JSON.parse(stored));
 
-    const intervalId = setInterval(() => fetchRecords(false), 45000);
+    // ข้ามรอบโพลตอนแท็บ/หน้าจออยู่เบื้องหลัง (ดูเหตุผลเต็มที่ Dashboard.jsx)
+    const intervalId = setInterval(() => {
+      if (!document.hidden) fetchRecords(false);
+    }, 45000);
     return () => clearInterval(intervalId);
   }, []);
 
@@ -146,16 +163,35 @@ export default function StudentProfile({ initialStudentId }) {
       cancelButtonText: 'ยกเลิก',
     }).then(async (result) => {
       if (!result.isConfirmed) return;
+
+      // ⚡ เอารายการออกจากจอทันทีที่กดยืนยัน ไม่รอเซิร์ฟเวอร์ (เดิมรอ ~2 วิ แล้ว
+      // fetchRecords() ซ้ำอีกรอบพร้อมหน้าจอหมุนเต็มทับทั้งหน้าประวัตินักเรียน =
+      // อีก ~2 วิ ทั้งที่หายไปแค่ 1 รายการ) — ถ้าเซิร์ฟเวอร์ปฏิเสธ/ต่อไม่ได้ จะใส่
+      // กลับที่ตำแหน่งเดิมพร้อมแจ้งข้อผิดพลาด
+      const originalIndex = records.findIndex((r) => r.id === record.id);
+      deletedRecordIdsRef.current.add(record.id);
+      setRecords((prev) => prev.filter((r) => r.id !== record.id));
+
+      const restore = (message) => {
+        deletedRecordIdsRef.current.delete(record.id);
+        setRecords((prev) => {
+          if (prev.some((r) => r.id === record.id)) return prev;
+          const next = [...prev];
+          next.splice(Math.min(Math.max(originalIndex, 0), next.length), 0, record);
+          return next;
+        });
+        Swal.fire('ข้อผิดพลาด', message, 'error');
+      };
+
       try {
         const res = await callAPI('deleteRecord', { id: record.id });
         if (res.status === 'success') {
           Swal.fire({ icon: 'success', title: 'ลบแล้ว', timer: 1200, showConfirmButton: false });
-          fetchRecords();
         } else {
-          Swal.fire('ข้อผิดพลาด', res.message, 'error');
+          restore(res.message);
         }
       } catch {
-        Swal.fire('ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
+        restore('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
       }
     });
   };
@@ -175,16 +211,34 @@ export default function StudentProfile({ initialStudentId }) {
       cancelButtonText: 'ยกเลิก',
     }).then(async (result) => {
       if (!result.isConfirmed) return;
+
+      // ⚡ เอาออกจากจอทันที แล้วค่อยยืนยันกับเซิร์ฟเวอร์ (เดิมรอลบเสร็จแล้วยิง
+      // getProbationStatus ซ้ำอีก 1 รอบ = 2 รอบต่อเนื่อง) — ล้มเหลวจะใส่กลับที่เดิม
+      const sid = selected.studentId;
+      const originalIndex = (probationByStudent[sid] || []).findIndex((x) => x.id === p.id);
+      deletedProbationIdsRef.current.add(p.id);
+      setProbationByStudent((prev) => withoutDeletedProbation(prev));
+
+      const restore = (message) => {
+        deletedProbationIdsRef.current.delete(p.id);
+        setProbationByStudent((prev) => {
+          const list = [...(prev[sid] || [])];
+          if (list.some((x) => x.id === p.id)) return prev;
+          list.splice(Math.min(Math.max(originalIndex, 0), list.length), 0, p);
+          return { ...prev, [sid]: list };
+        });
+        Swal.fire('ข้อผิดพลาด', message, 'error');
+      };
+
       try {
         const res = await callAPI('deleteProbationRecord', { id: p.id });
         if (res.status === 'success') {
           Swal.fire({ icon: 'success', title: 'ลบแล้ว', timer: 1200, showConfirmButton: false });
-          fetchProbationStatus();
         } else {
-          Swal.fire('ข้อผิดพลาด', res.message, 'error');
+          restore(res.message);
         }
       } catch {
-        Swal.fire('ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
+        restore('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
       }
     });
   };
@@ -474,24 +528,24 @@ export default function StudentProfile({ initialStudentId }) {
               <div className="flex flex-col gap-2.5">
                 {selectedProbation.map((p, i) => (
                   // key: p.id เมื่อมี (รายการใหม่ทุกรายการมี) — fallback ไปที่ index
-                  // เฉพาะรายการเก่าก่อนมีคอลัมน์ id (ดู findProbationRowIndexById_
+                  // เฉพาะรายการเก่าก่อนมีคอลัมน์ id (ดู findProbationRowById_
                   // ใน Service_Probation.gs) กันแก้ไข/ลบแล้ว React จับคู่แถวผิดตัว
-                  <div key={p.id || i} className="flex items-center justify-between gap-3 rounded-[13px] bg-bad-bg/50 px-3.5 py-2.5">
-                    <div className="min-w-0">
+                  <div key={p.id || i} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-[13px] bg-bad-bg/50 px-3.5 py-2.5">
+                    <div className="min-w-0 flex-1 basis-[140px]">
                       <p className="text-[13.5px] font-semibold text-ink">{p.displayDate || 'ไม่ระบุวันที่'}</p>
                       {p.note && <p className="mt-0.5 text-xs text-ink-mute truncate">{p.note}</p>}
                     </div>
-                    <div className="shrink-0 flex items-center gap-2">
-                      <span className="text-[11px] text-ink-faint">บันทึกโดย {p.recordedBy}</span>
+                    <div className="flex max-w-full items-center gap-2">
+                      <span className="min-w-0 truncate text-[11px] text-ink-faint">บันทึกโดย {p.recordedBy}</span>
                       {/* ปุ่มแก้ไข/ลบ — ต้องมีทั้งสิทธิ์ (canManageProbation) และมี id
                           (รายการเก่าก่อนมีฟีเจอร์นี้ไม่มี id เลยแก้ไข/ลบผ่านหน้าเว็บ
-                          ไม่ได้ ดู findProbationRowIndexById_ ใน Service_Probation.gs) */}
+                          ไม่ได้ ดู findProbationRowById_ ใน Service_Probation.gs) */}
                       {canManageProbation && p.id && (
                         <>
                           <button
                             type="button"
                             onClick={() => setEditingProbation(p)}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] text-gold-700 bg-gold-50 hover:bg-gold-100 transition-colors"
+                            className="inline-flex h-10 w-10 sm:h-7 sm:w-7 shrink-0 items-center justify-center rounded-[10px] sm:rounded-[8px] text-gold-700 bg-gold-50 hover:bg-gold-100 transition-colors"
                             title="แก้ไขรายการนี้"
                           >
                             <Edit size={13} />
@@ -499,7 +553,7 @@ export default function StudentProfile({ initialStudentId }) {
                           <button
                             type="button"
                             onClick={() => handleDeleteProbation(p)}
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] text-bad-fg bg-bad-bg hover:brightness-95 transition-all"
+                            className="inline-flex h-10 w-10 sm:h-7 sm:w-7 shrink-0 items-center justify-center rounded-[10px] sm:rounded-[8px] text-bad-fg bg-bad-bg hover:brightness-95 transition-all"
                             title="ลบรายการนี้"
                           >
                             <Trash2 size={13} />
@@ -543,7 +597,7 @@ export default function StudentProfile({ initialStudentId }) {
                               href={r.pdfUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center justify-center rounded-full bg-brand-50 p-1.5 text-brand-600 transition-colors hover:bg-brand-100 hover:text-brand-700"
+                              className="inline-flex items-center justify-center rounded-full bg-brand-50 p-2.5 sm:p-1.5 text-brand-600 transition-colors hover:bg-brand-100 hover:text-brand-700"
                               title="เปิดไฟล์ PDF"
                             >
                               <FileText size={15} />
@@ -555,7 +609,7 @@ export default function StudentProfile({ initialStudentId }) {
                           {admin && (
                             <button
                               onClick={() => handleDeleteRecord(r)}
-                              className="inline-flex items-center justify-center rounded-full bg-bad-bg p-1.5 text-bad-fg transition-colors hover:brightness-95"
+                              className="inline-flex items-center justify-center rounded-full bg-bad-bg p-2.5 sm:p-1.5 text-bad-fg transition-colors hover:brightness-95"
                               title="ลบรายการนี้"
                             >
                               <Trash2 size={15} />

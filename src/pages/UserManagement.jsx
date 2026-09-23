@@ -108,17 +108,32 @@ export default function UserManagement() {
       cancelButtonText: 'ยกเลิก',
     }).then(async (result) => {
       if (!result.isConfirmed) return;
+
+      // ⚡ เอาแถวออกจากจอทันที ไม่รอเซิร์ฟเวอร์ แล้วไม่ต้อง fetchUsers() ซ้ำอีกรอบ
+      // (เดิมรอลบเสร็จ + โหลดรายชื่อทั้งหมดใหม่พร้อมหน้าจอหมุนเต็ม = 2 รอบต่อเนื่อง
+      // ทั้งที่หายไปแค่ 1 แถว) — ล้มเหลวจะใส่กลับที่ตำแหน่งเดิมพร้อมแจ้งข้อผิดพลาด
+      const originalIndex = users.findIndex((x) => x.username === u.username);
+      setUsers((prev) => prev.filter((x) => x.username !== u.username));
+
+      const restore = (message) => {
+        setUsers((prev) => {
+          if (prev.some((x) => x.username === u.username)) return prev;
+          const next = [...prev];
+          next.splice(Math.min(Math.max(originalIndex, 0), next.length), 0, u);
+          return next;
+        });
+        Swal.fire('ข้อผิดพลาด', message, 'error');
+      };
+
       try {
-        // NEW backend action 'deleteUser'
         const res = await callAPI('deleteUser', { username: u.username });
         if (res.status === 'success') {
           Swal.fire({ icon: 'success', title: 'ลบแล้ว', timer: 1200, showConfirmButton: false });
-          fetchUsers();
         } else {
-          Swal.fire('ข้อผิดพลาด', res.message, 'error');
+          restore(res.message);
         }
       } catch {
-        Swal.fire('ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
+        restore('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
       }
     });
   };

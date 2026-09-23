@@ -84,7 +84,12 @@ export default function Dashboard({ onViewStudent }) {
     };
 
     loadRecords(true);
-    const intervalId = setInterval(() => loadRecords(false), 45000);
+    // ข้ามรอบโพลตอนแท็บ/หน้าจออยู่เบื้องหลัง (มือถือล็อกจอ/สลับแอป) — ไม่มีใครเห็นผล
+    // แต่ยังยิง Apps Script ทุก 45 วิ เปลืองโควตาและแบตเตอรี่ และไปแย่ง rate limit
+    // ของคนที่ใช้งานอยู่จริง กลับมาเปิดหน้าอีกทีรอบโพลถัดไปก็ดึงข้อมูลใหม่ให้เอง
+    const intervalId = setInterval(() => {
+      if (!document.hidden) loadRecords(false);
+    }, 45000);
 
     const stored = localStorage.getItem('currentUser');
     if (stored) setCurrentUser(JSON.parse(stored));

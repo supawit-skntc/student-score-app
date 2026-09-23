@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Loader2, Search, SlidersHorizontal, FileText, Edit, Inbox, UserRound, Trash2, Download, ChevronDown } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
@@ -11,6 +11,7 @@ import { parsePoints } from '../utils/points';
 import { escapeHtml } from '../utils/html';
 import EditRecordModal from '../components/EditRecordModal';
 import Pagination from '../components/ui/Pagination';
+import { useMediaQuery } from '../utils/useMediaQuery';
 
 const PAGE_SIZE = 20;
 
@@ -46,6 +47,10 @@ export default function Report({ onViewStudent }) {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [page, setPage] = useState(1);
+  // 768px = จุดตัด md ของ Tailwind (ตรงกับที่ sidebar/แถบเมนูล่างใน DashboardLayout ใช้)
+  const isDesktop = useMediaQuery('(min-width: 768px)');
+  // id ของรายการที่ลบไปแล้วในหน้านี้ — ใช้กรองผลโพล/ดึงข้อมูลที่ตอบกลับมาช้ากว่าการลบ
+  const deletedIdsRef = useRef(new Set());
 
   // State สำหรับเก็บข้อมูลในหน้าต่างแก้ไข
   const [editingRecord, setEditingRecord] = useState(null);
@@ -82,7 +87,10 @@ export default function Report({ onViewStudent }) {
     // จัดทำ..." ค้างอยู่แบบนั้นแม้ PDF เสร็จแล้วจริงๆ จนกว่าจะรีเฟรชเอง — โพลนี้ไม่
     // โชว์ spinner เต็มจอ/ไม่เด้ง error (showSpinner=false) กันรบกวนขณะกำลังดู/
     // กรอง/ค้นหาอยู่
-    const intervalId = setInterval(() => fetchData(user, false), 45000);
+    // ข้ามรอบโพลตอนแท็บ/หน้าจออยู่เบื้องหลัง (ดูเหตุผลเต็มที่ Dashboard.jsx)
+    const intervalId = setInterval(() => {
+      if (!document.hidden) fetchData(user, false);
+    }, 45000);
     return () => clearInterval(intervalId);
   }, []);
 
@@ -99,7 +107,9 @@ export default function Report({ onViewStudent }) {
       const action = canViewAllRecords(user) ? 'getRecords' : 'getMyRecords';
       const result = await callAPI(action, {});
       if (result.status === 'success') {
-        setRecords(result.data);
+        // กรองรายการที่เพิ่งลบไปในหน้านี้ออกเสมอ (ดู handleDeleteRecord) กันโพลที่ยิง
+        // ไปก่อนลบเสร็จแล้วตอบกลับมาทีหลัง เอารายการที่ลบแล้วกลับมาโชว์ค้างอีกรอบ
+        setRecords(result.data.filter((r) => !deletedIdsRef.current.has(r.id)));
       } else if (showSpinner) {
         Swal.fire('ข้อผิดพลาด', result.message || 'ไม่สามารถดึงข้อมูลได้', 'error');
       }
@@ -219,16 +229,35 @@ export default function Report({ onViewStudent }) {
       cancelButtonText: 'ยกเลิก',
     }).then(async (result) => {
       if (!result.isConfirmed) return;
+
+      // ⚡ เอารายการออกจากจอทันทีที่กดยืนยัน ไม่รอเซิร์ฟเวอร์ตอบก่อน (เดิมรอ ~2 วิ
+      // แล้ว fetchData() อีกรอบ = โหลดรายการทั้งหมดซ้ำอีก ~2 วิ พร้อมหน้าจอหมุนเต็ม
+      // ทับตารางทั้งหน้า ทั้งที่รู้อยู่แล้วว่าต้องหายไปแค่ 1 รายการ) — ถ้าเซิร์ฟเวอร์
+      // ปฏิเสธ/ต่อไม่ได้ จะใส่รายการกลับที่ตำแหน่งเดิมพร้อมแจ้งข้อผิดพลาด
+      const originalIndex = records.findIndex((r) => r.id === record.id);
+      deletedIdsRef.current.add(record.id);
+      setRecords((prev) => prev.filter((r) => r.id !== record.id));
+
+      const restore = (message) => {
+        deletedIdsRef.current.delete(record.id);
+        setRecords((prev) => {
+          if (prev.some((r) => r.id === record.id)) return prev;
+          const next = [...prev];
+          next.splice(Math.min(Math.max(originalIndex, 0), next.length), 0, record);
+          return next;
+        });
+        Swal.fire('ข้อผิดพลาด', message, 'error');
+      };
+
       try {
         const res = await callAPI('deleteRecord', { id: record.id });
         if (res.status === 'success') {
           Swal.fire({ icon: 'success', title: 'ลบแล้ว', timer: 1200, showConfirmButton: false });
-          fetchData();
         } else {
-          Swal.fire('ข้อผิดพลาด', res.message, 'error');
+          restore(res.message);
         }
       } catch {
-        Swal.fire('ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้', 'error');
+        restore('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
       }
     });
   };
@@ -479,7 +508,8 @@ export default function Report({ onViewStudent }) {
       ) : (
         <>
           {/* --- Desktop: table --- */}
-          <div className="hidden md:block bg-white rounded-[20px] border border-line overflow-hidden">
+          {isDesktop && (
+          <div className="bg-white rounded-[20px] border border-line overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse min-w-[920px]">
                 <thead>
@@ -494,8 +524,8 @@ export default function Report({ onViewStudent }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line-soft">
-                  {pageRecords.map((record, index) => (
-                    <tr key={index} className="hover:bg-[#FDF7F6] transition-colors bg-white">
+                  {pageRecords.map((record) => (
+                    <tr key={record.id} className="hover:bg-[#FDF7F6] transition-colors bg-white">
                       <td className="p-4 text-[13.5px] text-ink-mute whitespace-nowrap">{record.displayDate}</td>
                       <td className="p-4 text-[13.5px] font-bold text-brand-600">{record.studentId}</td>
                       <td className="p-4 text-[13.5px]">
@@ -571,11 +601,13 @@ export default function Report({ onViewStudent }) {
               </table>
             </div>
           </div>
+          )}
 
           {/* --- Mobile: record cards --- */}
-          <div className="md:hidden flex flex-col gap-2.5">
-            {pageRecords.map((record, index) => (
-              <div key={index} className="bg-white rounded-[18px] border border-line p-3.5 flex flex-col gap-2.5">
+          {!isDesktop && (
+          <div className="flex flex-col gap-2.5">
+            {pageRecords.map((record) => (
+              <div key={record.id} className="bg-white rounded-[18px] border border-line p-3.5 flex flex-col gap-2.5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-[15px] font-semibold text-ink truncate">{record.displayFullName}</p>
@@ -640,6 +672,7 @@ export default function Report({ onViewStudent }) {
               </div>
             ))}
           </div>
+          )}
 
           <Pagination page={page} pageSize={PAGE_SIZE} total={filteredRecords.length} onPageChange={setPage} />
         </>
