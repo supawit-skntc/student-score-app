@@ -92,13 +92,22 @@ const ALL_MAJORS = [...new Set([...MAJORS_PVC, ...MAJORS_PVS])];
 export function parseOcrCardData(extractedData) {
   const fullText = JSON.stringify(extractedData);
 
+  // บัตรประจำตัวออนไลน์ (ภาพแคปหน้าจอมือถือ) มีแค่รูป ชื่อ และเลขประจำตัว — ไม่มีคำนำหน้า
+  // สาขาวิชา หรือระดับ พิมพ์อยู่เลย ถ้า AI ตอบสาขา/ระดับมาให้ แปลว่าเดาเอง จึงทิ้งทั้งหมด
+  // (ปล่อยว่างให้ครูเลือกเอง ดีกว่ากรอกค่าที่ไม่มีอยู่บนบัตรจริง)
+  const isOnlineCard = String(extractedData.cardType || '').toLowerCase().includes('online');
+
   // 1. จัดการสาขาวิชา — จับคู่จาก rawMajorLine ที่ AI แยกมาให้ก่อนเสมอ (ไม่ใช่
   // ค้นทั้งก้อน) รวมกับสาขาของทั้ง ปวช. และ ปวส. เพราะยังไม่รู้ระดับของบัตรใบนี้
   // ล่วงหน้า (ดูคำอธิบาย ALL_MAJORS ด้านบน)
-  const majorSearchText = extractedData.rawMajorLine || fullText;
+  // เทียบโดยตัดช่องว่างทิ้งทั้งสองฝั่ง — AI ชอบแทรกช่องว่างกลางชื่อสาขา (เช่น "เทคโนโลยี
+  // ธุรกิจดิจิทัล") ทำให้ includes() ตรงตัวหาไม่เจอแล้วสาขากลายเป็นค่าว่างทั้งที่อ่านได้ถูก
+  // (ทดสอบกับ AI จริงเจอ 1 ใน 3 รอบของบัตรใบเดียวกัน)
+  const squash = (s) => String(s).replace(/\s+/g, '');
+  const majorSearchText = squash(extractedData.rawMajorLine || fullText);
   let cleanMajor = '';
-  for (const major of ALL_MAJORS) {
-    if (majorSearchText.includes(major)) {
+  for (const major of isOnlineCard ? [] : ALL_MAJORS) {
+    if (majorSearchText.includes(squash(major))) {
       cleanMajor = major;
       break;
     }
@@ -118,6 +127,9 @@ export function parseOcrCardData(extractedData) {
     .trim();
 
   rawName = rawName.split(/เลข|สาขา|ระดับ|[0-9]/)[0];
+  // บัตรออนไลน์: เก็บเฉพาะตัวอักษรไทยและช่องว่าง กันข้อความบนแถบเบราว์เซอร์ (เช่น ชื่อเว็บ)
+  // ที่ AI อ่านติดมากับชื่อ
+  if (isOnlineCard) rawName = rawName.replace(/[^\u0E00-\u0E7F\s]/g, '');
   // บัตรพิมพ์ช่องว่าง "สองช่อง" คั่นระหว่างชื่อกับนามสกุล (ยืนยันจากบัตรจริง) — ยุบ
   // ให้เหลือช่องเดียวเสมอ ไม่งั้นชื่อที่เก็บลงชีตมีช่องว่างซ้อน ทำให้ค้นด้วยชื่อที่พิมพ์
   // ช่องเดียว (s.name.includes(...) ในหน้าประวัตินักเรียน/รายงาน) ไม่เจอ
@@ -159,7 +171,8 @@ export function parseOcrCardData(extractedData) {
   // จากฟิลด์อื่น) จะเลือก "ปวส." เสมอเพราะเช็กทับท้ายสุดโดยไม่มีเหตุผลรองรับ
   const rawLevel = String(extractedData.level || '');
   let cleanLevel = '';
-  if (rawLevel.includes('ปวส')) cleanLevel = 'ปวส.';
+  if (isOnlineCard) cleanLevel = '';
+  else if (rawLevel.includes('ปวส')) cleanLevel = 'ปวส.';
   else if (rawLevel.includes('ปวช')) cleanLevel = 'ปวช.';
   else if (fullText.includes('ปวส')) cleanLevel = 'ปวส.';
   else if (fullText.includes('ปวช')) cleanLevel = 'ปวช.';
@@ -170,5 +183,6 @@ export function parseOcrCardData(extractedData) {
     studentName: cleanName,
     fieldOfStudy: cleanMajor,
     level: cleanLevel,
+    cardType: isOnlineCard ? 'online' : 'physical',
   };
 }

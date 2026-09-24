@@ -93,7 +93,9 @@ function checkRateLimit_(token) {
 // ==========================================
 const BACKUP_FOLDER_NAME = 'ระบบตัดคะแนน_Backups';
 const BACKUP_RETENTION_DAYS = 30;
-const BACKUP_SHEET_NAMES = ['Records', 'Users'];
+// สำรองเฉพาะ Records — ชีต Users มีแค่ไม่กี่บัญชีสร้างใหม่ได้เร็ว และไฟล์สำรองจะมีค่า
+// Password_Hash/Salt ของทุกคนติดไปด้วย (เสี่ยงกว่าประโยชน์ที่ได้) จึงไม่สำรองชีตนี้
+const BACKUP_SHEET_NAMES = ['Records'];
 
 function getOrCreateBackupFolder_() {
   const folders = DriveApp.getFoldersByName(BACKUP_FOLDER_NAME);

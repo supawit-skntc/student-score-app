@@ -1,7 +1,9 @@
 // src/services/api.js
 
 // URL ของ Google Apps Script (Web App) จากระบบเดิมของคุณ
-const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwdR-q9N5ipN4KIEagpeI6z2ELe_VEBJ--4Narhjiu0fOfjzY8YnpvEjoWHec--QVc1/exec";
+// (ตอนพัฒนาบนเครื่อง ใส่ VITE_GAS_API_URL=... ในไฟล์ .env.local เพื่อชี้ไปยังระบบสาธิต/ทดสอบแทน
+// ตัวจริงได้โดยไม่ต้องแก้ไฟล์นี้ — ไฟล์ *.local ไม่ถูกส่งขึ้น git และ Netlify จะไม่เห็น จึงไม่กระทบระบบจริง)
+const GAS_API_URL = import.meta.env.VITE_GAS_API_URL || "https://script.google.com/macros/s/AKfycbzbMCU50DIP7xNtiPlepRCk051cyrk_2aurC9yfTBOsU2QBtxbSdX9Gl1ibFCOKo9Wo/exec";
 
 // Google เด้งหน้า HTML กลับมาแทน JSON เป็นครั้งคราวโดยไม่มีสาเหตุจากโค้ดเราเลย
 // (เจอมาแล้วหลายครั้ง ทั้งฝั่งเว็บนี้และฝั่งบอท RPA) ลองใหม่อัตโนมัติสั้นๆ ก่อนจะ

@@ -107,16 +107,33 @@ export default function DeductionForm() {
         const extractedData = JSON.parse(jsonMatch[0]);
         const parsed = parseOcrCardData(extractedData);
 
+        // ข้อมูลตัวนักเรียนที่บัตรให้มา (รหัส/คำนำหน้า/ชื่อ/ระดับ/สาขา) "แทนที่" ของเดิมทั้งชุด
+        // แม้ช่องไหนอ่านไม่ได้ก็ล้างเป็นว่าง — เดิมใช้ค่าเดิมค้างไว้ (parsed.x || prev.x) ทำให้
+        // สแกนบัตรนักเรียนคนใหม่แล้วสาขา/ระดับของ "คนก่อนหน้า" ยังค้างอยู่ ดูเหมือน AI เติมข้อมูล
+        // ผิดคนเข้ามาเอง (เจอบ่อยกับบัตรออนไลน์ที่ไม่มีสาขา/ระดับให้อ่าน)
         setFormData(prev => ({
           ...prev,
-          studentId: parsed.studentId || prev.studentId,
-          nameTitle: parsed.nameTitle || prev.nameTitle,
-          studentName: parsed.studentName || prev.studentName,
-          fieldOfStudy: parsed.fieldOfStudy || prev.fieldOfStudy,
-          level: parsed.level || prev.level
+          studentId: parsed.studentId,
+          nameTitle: parsed.nameTitle,
+          studentName: parsed.studentName,
+          fieldOfStudy: parsed.fieldOfStudy,
+          level: parsed.level
         }));
 
-        setTimeout(() => setOcrProgress(''), 1500);
+        // บอกครูตรงๆ ว่าช่องไหนบัตรใบนี้ไม่ได้ให้มา ต้องกรอก/เลือกเอง
+        const missing = [
+          !parsed.studentId && 'รหัสนักเรียน',
+          !parsed.nameTitle && 'คำนำหน้า',
+          !parsed.studentName && 'ชื่อ-สกุล',
+          !parsed.level && 'ระดับ',
+          !parsed.fieldOfStudy && 'สาขาวิชา',
+        ].filter(Boolean);
+        if (missing.length) {
+          setOcrProgress(`${parsed.cardType === 'online' ? 'บัตรออนไลน์มีแค่รหัสและชื่อ — ' : ''}กรุณากรอก/เลือกเอง: ${missing.join(', ')}`);
+          setTimeout(() => setOcrProgress(''), 9000);
+        } else {
+          setTimeout(() => setOcrProgress(''), 1500);
+        }
       } else {
         setOcrProgress('AI ไม่สามารถอ่านรูปแบบบัตรได้ชัดเจน');
       }
