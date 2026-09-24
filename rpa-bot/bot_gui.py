@@ -22,9 +22,10 @@ bot_gui.py — หน้าต่างควบคุมบอทแบบก�
   ได้เลย — ต่างจากการทำปุ่ม "รันบอท" บนหน้าเว็บสาธารณะซึ่งเสี่ยงกว่ามาก
 - หน้าต่างนี้ใช้งานได้เฉพาะคนที่นั่งอยู่หน้าเครื่องนี้จริงๆ เท่านั้น
 
-การรันอัตโนมัติเต็มรูปแบบ (เช่น ทุก 15 นาทีตลอดวันโดยไม่ต้องมีคนกดเอง) ยังคงใช้
-Windows Task Scheduler ชี้ไปที่ run_bot.bat ตามเดิม (ดู README.md) — หน้าต่างนี้
-มีไว้สำหรับตั้งค่าครั้งแรก และกรณีอยากรันเองตอนไหนเป็นพิเศษ
+การรันอัตโนมัติ: มีสวิตช์ "รันจริงอัตโนมัติตามเวลา" ในหน้าต่าง (เช่น 11:00 และ 16:00
+ของทุกวัน ดู schedule_logic.py) ใช้ได้ตราบที่เปิดหน้าต่างนี้ค้างไว้และเครื่องไม่หลับ
+ถ้าต้องการให้รันแม้ไม่ได้เปิดหน้าต่าง (หรือเปิดเครื่องแล้วรันเอง) ยังใช้
+Windows Task Scheduler ชี้ไปที่ run_bot.bat / rms-bot-runner.exe ได้ตามเดิม (ดู README.md)
 """
 
 import datetime
@@ -39,6 +40,7 @@ from tkinter import messagebox, filedialog
 import customtkinter as ctk
 import keyring
 
+import schedule_logic
 from app_paths import app_dir, is_frozen
 
 SERVICE = "rms-rpa-bot"
@@ -86,8 +88,7 @@ class BotControlPanel(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("ควบคุมบอท RMS — ระบบตัดคะแนนความประพฤติ")
-        self.geometry("1120x780")
-        self.minsize(980, 680)
+        self._fit_window_to_screen()
         self.configure(fg_color=COLORS["bg"])
 
         self.entries = {}
@@ -102,16 +103,41 @@ class BotControlPanel(ctk.CTk):
 
         self._setup_fonts()
 
+        # ตารางรันอัตโนมัติ เก็บต่อเครื่อง (%APPDATA%\RMS-Bot) ไม่ติดไปกับโฟลเดอร์โปรแกรม
+        self.schedule_path = schedule_logic.state_path(app_dir())
+        self.schedule = schedule_logic.load_state(self.schedule_path)
+
         # การ์ดใหญ่ครอบทุกอย่างไว้กลางจอ (เหมือน "หน้าต่างแอป" ในดีไซน์ต้นแบบ)
         self.shell = ctk.CTkFrame(
             self, fg_color=COLORS["surface"], corner_radius=16,
             border_width=1, border_color=COLORS["border"],
         )
-        self.shell.pack(fill="both", expand=True, padx=24, pady=24)
+        pad = 12 if self.compact else 24
+        self.shell.pack(fill="both", expand=True, padx=pad, pady=pad)
 
         self._build_header()
         self._build_body()
-        self._load_existing_values()
+
+        # อ่านรหัสผ่านจาก Credential Manager หลังหน้าต่างวาดเสร็จแล้ว — ไม่ให้การอ่าน
+        # keyring (ครั้งแรกอาจช้า) มาขวางไม่ให้หน้าต่างโผล่
+        self.after(50, self._load_existing_values)
+        self.after(1000, self._schedule_tick)
+
+    # ขนาดหน้าต่างต้องไม่ใหญ่กว่าจอ — เดิมตั้งตายตัว 1120x780 ทำให้บนโน้ตบุ๊กจอเล็ก
+    # (เช่น 1366x768) ขอบล่างหลุดจอ จนไม่เห็นปุ่ม "บันทึกการตั้งค่า"
+    # (CustomTkinter ปรับสเกลตามค่าซูมของ Windows อยู่แล้ว จึงหารด้วยสเกลเพื่อเทียบเป็นหน่วยเดียวกัน)
+    def _fit_window_to_screen(self):
+        scale = self._get_window_scaling() or 1.0
+        avail_w = self.winfo_screenwidth() / scale
+        avail_h = self.winfo_screenheight() / scale
+        width = int(min(1120, avail_w - 40))
+        height = int(min(860, avail_h - 110))  # เผื่อแถบงาน (taskbar) และแถบชื่อหน้าต่าง
+        x = max(0, int((self.winfo_screenwidth() - width * scale) / 2))
+        y = max(0, int((self.winfo_screenheight() - height * scale) / 2) - 30)
+        self.geometry(f"{width}x{height}+{x}+{y}")
+        self.minsize(min(820, width), min(520, height))
+        # จอเตี้ย (สูงไม่ถึงที่ออกแบบไว้) → ใช้โหมดกระชับ: ลดขอบ และให้คอลัมน์ขวาเลื่อนได้
+        self.compact = height < 800
 
     # ตัวอักษรเดิมของ Tk เล็กและอ่านยากมากบนจอความละเอียดสูง — เช็กก่อนว่าเครื่องนี้
     # มีฟอนต์ตามดีไซน์ (IBM Plex Sans Thai / IBM Plex Mono) ติดตั้งไว้ไหม ถ้าไม่มีก็
@@ -135,7 +161,7 @@ class BotControlPanel(ctk.CTk):
 
     def _build_header(self):
         header = ctk.CTkFrame(self.shell, fg_color="transparent")
-        header.pack(fill="x", padx=32, pady=(26, 18))
+        header.pack(fill="x", padx=32, pady=(14, 10) if self.compact else (26, 18))
 
         left = ctk.CTkFrame(header, fg_color="transparent")
         left.pack(side="left")
@@ -174,7 +200,7 @@ class BotControlPanel(ctk.CTk):
 
     def _build_body(self):
         body = ctk.CTkFrame(self.shell, fg_color="transparent")
-        body.pack(fill="both", expand=True, padx=32, pady=(0, 28))
+        body.pack(fill="both", expand=True, padx=32, pady=(0, 14) if self.compact else (0, 28))
         body.grid_columnconfigure(0, weight=105, uniform="col")
         body.grid_columnconfigure(1, weight=100, uniform="col")
         body.grid_rowconfigure(0, weight=1)
@@ -188,7 +214,10 @@ class BotControlPanel(ctk.CTk):
         self._build_settings_card()
 
         # คอลัมน์ขวา — ขั้นตอนที่ 2 รันบอท + คอนโซลล็อก (เติมเนื้อหาในส่วนถัดไป)
-        right_col = ctk.CTkFrame(body, fg_color="transparent")
+        if self.compact:
+            right_col = ctk.CTkScrollableFrame(body, fg_color="transparent", corner_radius=0)
+        else:
+            right_col = ctk.CTkFrame(body, fg_color="transparent")
         right_col.grid(row=0, column=1, sticky="nsew", padx=(12, 0))
 
         self.run_card = ctk.CTkFrame(
@@ -273,7 +302,120 @@ class BotControlPanel(ctk.CTk):
         self.progress_bar.set(0)
         self.progress_bar.pack(fill="x")
 
+        self._build_schedule_section(body)
         self._update_mode_visual("test")
+
+    # ==========================================================
+    # รันอัตโนมัติตามเวลา (เช่น 11:00 และ 16:00 ของทุกวัน)
+    # ==========================================================
+    def _build_schedule_section(self, body):
+        ctk.CTkFrame(body, height=1, fg_color=COLORS["border_soft"]).pack(fill="x", pady=(16, 12))
+
+        head = ctk.CTkFrame(body, fg_color="transparent")
+        head.pack(fill="x")
+        ctk.CTkLabel(
+            head, text="รันจริงอัตโนมัติตามเวลา", font=self.font_label, text_color=COLORS["text_muted"]
+        ).pack(side="left")
+        self.schedule_switch = ctk.CTkSwitch(
+            head, text="", width=44, command=self._on_schedule_toggle,
+            progress_color=COLORS["accent"],
+        )
+        self.schedule_switch.pack(side="right")
+
+        self.schedule_times_var = ctk.StringVar(value=", ".join(self.schedule["times"]))
+        self.schedule_entry = ctk.CTkEntry(
+            body, textvariable=self.schedule_times_var, placeholder_text="เช่น 11:00, 16:00",
+            font=self.font_input, height=36, corner_radius=10, fg_color=COLORS["surface_muted"],
+            border_color=COLORS["border"], border_width=1, text_color=COLORS["text"],
+        )
+        self.schedule_entry.pack(fill="x", pady=(8, 0))
+
+        self.schedule_note_label = ctk.CTkLabel(
+            body, text="", font=self.font_hint, anchor="w", justify="left", wraplength=380,
+        )
+        self.schedule_note_label.pack(fill="x", pady=(6, 0))
+
+        if self.schedule["enabled"]:
+            self.schedule_switch.select()
+            self.schedule_entry.configure(state="disabled")
+        self._refresh_schedule_note()
+
+    def _refresh_schedule_note(self):
+        if self.schedule["enabled"]:
+            now = datetime.datetime.now()
+            when = schedule_logic.next_run(now, self.schedule["times"], self.schedule["last_runs"])
+            text = f"เปิดอยู่ — รอบถัดไป: {schedule_logic.describe_next_run(now, when)} (ต้องเปิดโปรแกรมนี้ค้างไว้)"
+            color = COLORS["success"]
+        else:
+            text = "ปิดอยู่ — เปิดสวิตช์แล้วโปรแกรมจะรันจริงตามเวลาที่ตั้ง ต้องเปิดโปรแกรมนี้ค้างไว้และไม่ให้เครื่องหลับ"
+            color = COLORS["text_faint"]
+        if self.schedule_note_label.cget("text") != text:
+            self.schedule_note_label.configure(text=text, text_color=color)
+
+    def _save_schedule(self):
+        try:
+            schedule_logic.save_state(self.schedule_path, self.schedule)
+            return True
+        except OSError as e:
+            messagebox.showwarning("บันทึกเวลาไม่ได้", f"บันทึกตารางเวลาไม่สำเร็จ: {e}")
+            return False
+
+    def _on_schedule_toggle(self):
+        turning_on = bool(self.schedule_switch.get())
+        if not turning_on:
+            self.schedule["enabled"] = False
+            self.schedule_entry.configure(state="normal")
+            self._save_schedule()
+            self._refresh_schedule_note()
+            return
+
+        def cancel(title, message):
+            messagebox.showwarning(title, message)
+            self.schedule_switch.deselect()
+
+        try:
+            times = schedule_logic.parse_times(self.schedule_times_var.get())
+        except ValueError as e:
+            cancel("เวลาไม่ถูกต้อง", str(e))
+            return
+        if self._missing_credentials():
+            cancel("ยังเปิดไม่ได้", "ยังตั้งค่าบัญชีไม่ครบ 4 ช่อง — กรอกที่ขั้นตอนที่ 1 แล้วกด \"บันทึกการตั้งค่า\" ก่อน")
+            return
+        joined = ", ".join(times)
+        if not messagebox.askyesno(
+            "เปิดรันอัตโนมัติ",
+            f"โปรแกรมจะ \"รันจริง\" (บันทึกข้อมูลลง RMS จริง) เองทุกวันเวลา {joined} น.\n\n"
+            "ต้องเปิดหน้าต่างนี้ค้างไว้และเครื่องต้องไม่หลับ\nต้องการเปิดใช้งานหรือไม่?",
+        ):
+            self.schedule_switch.deselect()
+            return
+
+        self.schedule["enabled"] = True
+        self.schedule["times"] = times
+        self.schedule_times_var.set(joined)
+        self.schedule_entry.configure(state="disabled")  # แก้เวลาได้ตอนปิดสวิตช์เท่านั้น
+        if not self._save_schedule():
+            self.schedule["enabled"] = False
+            self.schedule_entry.configure(state="normal")
+            self.schedule_switch.deselect()
+        self._refresh_schedule_note()
+
+    def _schedule_tick(self):
+        # เช็กทุก 15 วินาที — ตั้งรอบถัดไปก่อนเสมอ เพื่อให้ error ในรอบนี้ไม่ทำให้ตัวจับเวลาหยุด
+        self.after(15000, self._schedule_tick)
+        if not self.schedule["enabled"]:
+            return
+        now = datetime.datetime.now()
+        self._refresh_schedule_note()
+        if self.is_running:
+            return  # กำลังรันอยู่ (ทั้งที่กดเองและอัตโนมัติ) — รอบนี้ยังอยู่ในช่วงผ่อนผัน เดี๋ยวลองใหม่
+        slot = schedule_logic.due_slot(now, self.schedule["times"], self.schedule["last_runs"])
+        if not slot:
+            return
+        self.schedule["last_runs"][slot] = now.date().isoformat()
+        self._save_schedule()
+        self._append_log(f"[อัตโนมัติ] ถึงเวลา {slot} น. — เริ่มรันจริงตามตารางเวลา")
+        self._run_bot(dry_run=False, auto=True)
 
     def _update_mode_visual(self, mode):
         self.current_mode = mode
@@ -333,15 +475,33 @@ class BotControlPanel(ctk.CTk):
             head, text="ทำครั้งเดียว", font=self.font_hint, text_color=COLORS["text_faint"]
         ).pack(side="right")
 
-        body = ctk.CTkFrame(card, fg_color="transparent")
-        body.pack(fill="both", expand=True, padx=20, pady=(6, 20))
+        # ปุ่มบันทึกปักไว้ล่างสุดของการ์ด (pack ก่อนส่วนเลื่อน) — จอเล็กแค่ไหนก็ต้องเห็นปุ่มเสมอ
+        # ส่วนช่องกรอกอยู่ในกรอบที่เลื่อนได้ ถ้าจอไม่พอจะมีแถบเลื่อนให้แทนการหลุดจอ
+        footer = ctk.CTkFrame(card, fg_color=COLORS["surface"], corner_radius=0)
+        footer.pack(side="bottom", fill="x", padx=20, pady=(0, 16))
+        ctk.CTkFrame(footer, height=1, fg_color=COLORS["border_soft"]).pack(fill="x", pady=(0, 12))
+        save_row = ctk.CTkFrame(footer, fg_color="transparent")
+        save_row.pack(fill="x")
+        self.saved_note_label = ctk.CTkLabel(
+            save_row, text="ยังไม่ได้บันทึกการเปลี่ยนแปลง", font=self.font_hint,
+            text_color=COLORS["text_faint"],
+        )
+        self.saved_note_label.pack(side="left")
+        ctk.CTkButton(
+            save_row, text="บันทึกการตั้งค่า", command=self._save_credentials,
+            font=self.font_button, height=42, corner_radius=10,
+            fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"],
+        ).pack(side="right")
+
+        body = ctk.CTkScrollableFrame(card, fg_color="transparent", corner_radius=0)
+        body.pack(fill="both", expand=True, padx=(12, 8), pady=(0, 6))
 
         self._build_field_group(body, "เว็บแอป EDMS", FIELDS[0], FIELDS[1])
         ctk.CTkFrame(body, height=1, fg_color=COLORS["border_soft"]).pack(fill="x", pady=16)
         self._build_field_group(body, "บัญชี RMS จริง", FIELDS[2], FIELDS[3])
 
         hint = ctk.CTkFrame(body, fg_color=COLORS["surface_muted"], corner_radius=10)
-        hint.pack(fill="x", pady=(20, 16))
+        hint.pack(fill="x", pady=(20, 8))
         dot = ctk.CTkFrame(
             hint, width=16, height=16, corner_radius=999, fg_color="transparent",
             border_width=1, border_color=COLORS["text_faint"],
@@ -356,19 +516,6 @@ class BotControlPanel(ctk.CTk):
             font=self.font_hint, text_color=COLORS["text_muted"], anchor="w", justify="left",
             wraplength=320,
         ).pack(side="left", fill="x", expand=True, padx=(0, 13), pady=11)
-
-        save_row = ctk.CTkFrame(body, fg_color="transparent")
-        save_row.pack(fill="x")
-        self.saved_note_label = ctk.CTkLabel(
-            save_row, text="ยังไม่ได้บันทึกการเปลี่ยนแปลง", font=self.font_hint,
-            text_color=COLORS["text_faint"],
-        )
-        self.saved_note_label.pack(side="left")
-        ctk.CTkButton(
-            save_row, text="บันทึกการตั้งค่า", command=self._save_credentials,
-            font=self.font_button, height=42, corner_radius=10,
-            fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"],
-        ).pack(side="right")
 
     def _build_field_group(self, parent, group_label, username_field, password_field):
         group = ctk.CTkFrame(parent, fg_color="transparent")
@@ -486,7 +633,7 @@ class BotControlPanel(ctk.CTk):
 
         self.log_box = ctk.CTkTextbox(
             card, fg_color=COLORS["console_bg"], text_color=COLORS["console_text"],
-            font=self.font_mono, corner_radius=0, wrap="word", height=236,
+            font=self.font_mono, corner_radius=0, wrap="word", height=200 if self.compact else 120,
         )
         self.log_box.pack(fill="both", expand=True, padx=0, pady=(0, 0))
         self.log_box.configure(state="disabled")
@@ -584,9 +731,30 @@ class BotControlPanel(ctk.CTk):
         self.progress_bar.set(pct / 100 if total else 0)
         self.progress_label.configure(text="กำลังประมวลผลรายการ" if self.is_running else "ความคืบหน้า")
 
-    def _run_bot(self, dry_run):
+    def _missing_credentials(self):
+        return [k for k, _, _ in FIELDS if not keyring.get_password(SERVICE, k)]
+
+    def _run_bot(self, dry_run, auto=False):
+        # auto=True คือรันตามตารางเวลา — ห้ามเด้งกล่องข้อความ (ไม่มีคนนั่งรอกด OK) ให้ลงล็อกแทน
         if self.process is not None:
-            messagebox.showwarning("กำลังทำงานอยู่", "บอทกำลังทำงานอยู่ กรุณารอให้เสร็จก่อน")
+            if not auto:
+                messagebox.showwarning("กำลังทำงานอยู่", "บอทกำลังทำงานอยู่ กรุณารอให้เสร็จก่อน")
+            return
+
+        # บอทอ่านบัญชีจาก Credential Manager เท่านั้น (ไม่ใช่จากช่องที่พิมพ์ค้างในหน้าต่าง)
+        # ถ้ายังไม่ได้บันทึก ให้บอกวิธีแก้ตรงนี้เลย แทนที่จะปล่อยให้บอทพังกลางทาง
+        missing = self._missing_credentials()
+        if missing and auto:
+            self._append_log("[อัตโนมัติ] ข้ามรอบนี้ — ยังตั้งค่าบัญชีไม่ครบ กรุณาตั้งค่าที่ขั้นตอนที่ 1")
+            return
+        if missing:
+            typed = any(self.entries[k].get().strip() for k in missing)
+            hint = (
+                "คุณกรอกข้อมูลไว้แล้วแต่ยังไม่ได้กดปุ่ม \"บันทึกการตั้งค่า\" (ปุ่มสีแดงมุมล่างซ้าย)\nกดบันทึกก่อน แล้วลองรันใหม่อีกครั้ง"
+                if typed else
+                "ยังไม่ได้ตั้งค่าบัญชีครบ 4 ช่อง\nกรอกชื่อผู้ใช้/รหัสผ่านทั้ง EDMS และ RMS ที่ขั้นตอนที่ 1 แล้วกด \"บันทึกการตั้งค่า\" ก่อน"
+            )
+            messagebox.showwarning("ยังรันไม่ได้", hint)
             return
 
         mode = "test" if dry_run else "real"

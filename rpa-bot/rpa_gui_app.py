@@ -6,7 +6,16 @@ rpa_gui_app.py — ตัวเข้าโปรแกรม "RMS-Bot.exe" (ห
 ที่อยู่โฟลเดอร์เดียวกัน (ดู bot_gui.py)
 """
 
+try:  # มีเฉพาะตอนรันเป็น .exe ที่ห่อด้วย PyInstaller (หน้าจอ splash ตอนเปิดโปรแกรม)
+    import pyi_splash
+except ImportError:
+    pyi_splash = None
+
 from bot_gui import BotControlPanel
 
 if __name__ == "__main__":
-    BotControlPanel().mainloop()
+    app = BotControlPanel()
+    app.update()  # ให้หน้าต่างจริงวาดเสร็จก่อนค่อยปิด splash จะได้ไม่มีช่วงว่าง
+    if pyi_splash:
+        pyi_splash.close()
+    app.mainloop()

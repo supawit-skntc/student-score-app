@@ -30,11 +30,18 @@ run_a = Analysis(
 )
 MERGE((gui_a, "rpa_gui_app", "RMS-Bot"), (run_a, "rpa_runner_app", "rms-bot-runner"))
 
+# หน้าจอ splash โชว์ทันทีที่ดับเบิลคลิก (ก่อนโหลดไลบรารีหนักๆ เสร็จ) — เปิดครั้งแรกบนเครื่องใหม่
+# Windows/ไวรัสสแกนไฟล์ก่อนนาน ผู้ใช้จะได้เห็นว่าโปรแกรมกำลังเปิดอยู่ ไม่ใช่ค้าง
+splash = Splash(
+    "build_assets/splash.png", binaries=gui_a.binaries, datas=gui_a.datas,
+    text_pos=None, always_on_top=True,
+)
+
 gui_pyz = PYZ(gui_a.pure)
 run_pyz = PYZ(run_a.pure)
 
 gui_exe = EXE(
-    gui_pyz, gui_a.scripts, [], exclude_binaries=True, name="RMS-Bot",
+    gui_pyz, gui_a.scripts, splash, [], exclude_binaries=True, name="RMS-Bot",
     console=False, icon=ICON, upx=False,
 )
 run_exe = EXE(
@@ -43,7 +50,7 @@ run_exe = EXE(
 )
 
 COLLECT(
-    gui_exe, gui_a.binaries, gui_a.datas,
+    gui_exe, gui_a.binaries, gui_a.datas, splash.binaries,
     run_exe, run_a.binaries, run_a.datas,
     strip=False, upx=False, name="RMS-Bot",
 )

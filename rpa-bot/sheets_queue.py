@@ -114,7 +114,8 @@ def _ensure_login() -> None:
     if not APP_USERNAME or not APP_PASSWORD:
         raise RuntimeError(
             "ยังไม่ได้ตั้งค่าบัญชีเว็บแอป EDMS สำหรับบอท — "
-            "รัน setup_credentials.py (หรือดับเบิลคลิก setup_credentials.bat) ก่อนครับ"
+            "เปิดโปรแกรม RMS-Bot แล้วกรอกที่ \"ขั้นตอนที่ 1 ตั้งค่าบัญชี\" จากนั้นกด \"บันทึกการตั้งค่า\" "
+            "(ถ้ารันจากซอร์สโค้ดใช้ setup_credentials.py)"
         )
     result = _post("login", username=APP_USERNAME, password=APP_PASSWORD)
     if result.get("status") != "success":

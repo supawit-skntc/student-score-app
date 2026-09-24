@@ -241,8 +241,8 @@ def run_batch(records: list, dry_run: bool = True, on_record_done=None) -> list:
     """
     if not RMS_BOT_USERNAME or not RMS_BOT_PASSWORD:
         raise RuntimeError(
-            "ยังไม่ได้ตั้งค่าบัญชี RMS — รัน setup_credentials.py "
-            "(หรือดับเบิลคลิก setup_credentials.bat) ก่อนครับ"
+            "ยังไม่ได้ตั้งค่าบัญชี RMS — เปิดโปรแกรม RMS-Bot แล้วกรอกที่ \"ขั้นตอนที่ 1 ตั้งค่าบัญชี\" "
+            "จากนั้นกด \"บันทึกการตั้งค่า\" (ถ้ารันจากซอร์สโค้ดใช้ setup_credentials.py)"
         )
 
     results = []
