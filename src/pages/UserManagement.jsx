@@ -101,6 +101,12 @@ export default function UserManagement() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // 🔒 บทบาทที่ไม่ใช่ admin/full ("ครูผู้สอน") ต้องเลือกสาขาอย่างน้อย 1 สาขาเสมอ (คำขอผู้ใช้ 28/9/69) —
+    // เช็กฝั่งนี้ก่อนเพื่อไม่ต้องรอ round-trip ไปเซิร์ฟเวอร์ (ซึ่งบังคับเหมือนกันอยู่แล้วเป็นด่านจริง)
+    if (roleTiers[form.role] !== 'admin' && roleTiers[form.role] !== 'full' && form.majors.length === 0) {
+      Swal.fire('ยังบันทึกไม่ได้', 'กรุณาเลือก "สาขาที่รับผิดชอบ" อย่างน้อย 1 สาขาสำหรับบทบาทนี้', 'warning');
+      return;
+    }
     setIsSaving(true);
     try {
       if (modalMode === 'create') {
@@ -316,7 +322,7 @@ export default function UserManagement() {
 
               {roleTiers[form.role] !== 'admin' && roleTiers[form.role] !== 'full' && majorNames.length > 0 && (
                 <div>
-                  <label className={labelCls}>สาขาที่รับผิดชอบ (ไม่บังคับ)</label>
+                  <label className={labelCls}>สาขาที่รับผิดชอบ</label>
                   <div className="flex flex-wrap gap-1.5">
                     {majorNames.map((m) => {
                       const on = form.majors.includes(m);
@@ -332,11 +338,6 @@ export default function UserManagement() {
                       );
                     })}
                   </div>
-                  <p className="mt-1.5 text-xs text-slate-400">
-                    ครูจะเห็นประวัติของนักเรียนในสาขาที่เลือก (ดูอย่างเดียว แก้ไขได้เฉพาะรายการที่ตัวเองบันทึก) — แต่ละตัวเลือกครอบคลุมทั้ง
-                    ปวช. และ ปวส. ของสาขาเดียวกันให้อัตโนมัติ (เช่น "ช่างยนต์" รวมนักเรียน ปวส. "เทคนิคเครื่องกล" ด้วย) —
-                    เปลี่ยนแล้วครูต้องออกจากระบบและเข้าใหม่
-                  </p>
                 </div>
               )}
 

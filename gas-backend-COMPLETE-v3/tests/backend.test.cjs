@@ -244,8 +244,12 @@ if (require.main === module) {
   t('teacher cannot use bot endpoints', call(api, { action: 'getSyncQueue', token: T1 }).status === 'error');
 
   // ---- H. ผู้ใช้
-  const cu = (o) => call(api, { action: 'createUser', token: A, data: Object.assign({ username: 'newuser', fullName: 'ผู้ใช้ ใหม่', role: 'ครูผู้สอน', password: 'GoodPass123', email: '' }, o) });
+  const cu = (o) => call(api, { action: 'createUser', token: A, data: Object.assign({ username: 'newuser', fullName: 'ผู้ใช้ ใหม่', role: 'ครูผู้สอน', password: 'GoodPass123', email: '', majors: ['การบัญชี'] }, o) });
   t('createUser valid', cu({}).status === 'success');
+  t('createUser rejects empty majors for a normal-tier role (ครูผู้สอน, mandatory 28/9/69)', cu({ username: 'nomajor', majors: [] }).status === 'error');
+  t('createUser rejects omitted majors entirely for a normal-tier role', cu({ username: 'nomajor2', majors: undefined }).status === 'error');
+  t('createUser allows empty majors for a full-tier role (majors n/a for that tier)',
+    call(api, { action: 'createUser', token: A, data: { username: 'fulltier1', fullName: 'x', role: 'ครูปกครอง', password: 'GoodPass123', majors: [] } }).status === 'success');
   ['=cmd|calc', '+1', '@x', 'a b', 'x', 'ab$'].forEach((u) => t('createUser rejects username ' + JSON.stringify(u), cu({ username: u }).status === 'error'));
   ['rpa-bot2', 'Aemmika', 'pitchayamat', 'teacher.3', 'ครูสมชาย'].forEach((u) => t('createUser accepts username ' + u, cu({ username: u }).status === 'success'));
   t('createUser rejects whitespace-only password', cu({ username: 'wsuser', password: '        ' }).status === 'error');
@@ -318,7 +322,7 @@ if (require.main === module) {
     const upd = (username, majors) => { const r0 = call(a4, { action: 'updateUser', token: A4, data: { username, fullName: e4.sheets.Users.rows.find((r) => r[0] === username)[2], role: 'ครูผู้สอน', majors } }); spin(3); return r0; };
     t('updateUser rejects unknown major', upd('teacher1', ['สาขาที่ไม่มีจริง']).status === 'error');
     t('updateUser sets majors (adds column G automatically)', upd('teacher2', [DBD]).status === 'success' && e4.sheets.Users.width === 7 && e4.sheets.Users.rows[0][6] === 'Majors');
-    t('updateUser majors stored comma-separated', upd('teacher1', []).status === 'success');
+    t('updateUser rejects clearing majors to empty for a normal-tier role (mandatory 28/9/69)', upd('teacher1', []).status === 'error');
     const tt = (u, p) => login(a4, u, p);
     // เพิ่มรายการ: ครู1 บันทึก DBD(ของ s1), ช่างยนต์(ของ s2); ครู2 บันทึก DBD (s3); แอดมินบันทึก ช่างยนต์ (s4)
     const T1x = tt('teacher1', 'TeacherPass1').token, T2x = tt('teacher2', 'TeacherPass2').token;

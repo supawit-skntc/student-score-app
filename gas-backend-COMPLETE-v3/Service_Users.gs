@@ -163,6 +163,11 @@ function createUser(token, newUserData) {
 
   const majors = normalizeMajorsInput_(newUserData.majors);
   if (majors.error) return { status: "error", message: majors.error };
+  // 🔒 บทบาทระดับ 'normal' (ตอนนี้มีแค่ "ครูผู้สอน") ต้องกำหนดสาขาอย่างน้อย 1 สาขาเสมอ (คำขอผู้ใช้ 28/9/69 —
+  // เดิมเป็นช่องไม่บังคับ เว้นว่างได้ ทำให้ครูที่ไม่ได้ตั้งสาขาไว้เห็นแค่รายการที่ตัวเองบันทึกเท่านั้นโดยไม่ได้ตั้งใจ)
+  if (roleTierOf_(newUserData.role) === 'normal' && (majors.value || []).length === 0) {
+    return { status: "error", message: 'กรุณาเลือก "สาขาที่รับผิดชอบ" อย่างน้อย 1 สาขาสำหรับบทบาทนี้' };
+  }
 
   const salt = generateSalt();
   const saltedHash = hashPassword(String(newUserData.password).trim(), salt);
@@ -213,6 +218,12 @@ function updateUser(token, updatedData) {
 
   const majors = normalizeMajorsInput_(updatedData.majors);
   if (majors.error) return { status: "error", message: majors.error };
+  // 🔒 เหมือนกับ createUser ด้านบน — ต้องเช็กจาก "ค่าสุดท้ายหลังบันทึก" ไม่ใช่แค่ค่าที่ส่งมารอบนี้ เพราะ
+  // undefined แปลว่า "ไม่แตะ" (ใช้ค่าสาขาเดิมที่มีอยู่แล้วต่อ ไม่ใช่ว่างเปล่า)
+  const finalMajors = majors.value !== undefined ? majors.value : parseMajors_(data[rowIndex - 1][6]);
+  if (roleTierOf_(newRole) === 'normal' && finalMajors.length === 0) {
+    return { status: "error", message: 'กรุณาเลือก "สาขาที่รับผิดชอบ" อย่างน้อย 1 สาขาสำหรับบทบาทนี้' };
+  }
 
   if (session.username === String(updatedData.username).trim() && !isAdminRole_(newRole)) {
     return { status: "error", message: "ไม่สามารถลดสิทธิ์บัญชีของตัวเองได้ (ให้ผู้ดูแลระบบคนอื่นเป็นผู้แก้ไขแทน)" };
