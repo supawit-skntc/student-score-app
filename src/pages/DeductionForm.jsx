@@ -5,6 +5,7 @@ import { callAPI } from '../services/api';
 import { CACHED_OFFENSES, fetchOffenses, findOffense, OTHER_OFFENSE_POINTS } from '../data/offenses';
 import { resizeImageForOcr, parseOcrCardData, MAJORS_BY_LEVEL } from '../utils/ocr';
 import { todayLocalISO } from '../utils/date';
+import ThaiDateInput from '../components/ui/ThaiDateInput';
 
 const TITLE_OPTIONS = ['นาย', 'นาง', 'นางสาว'];
 
@@ -430,7 +431,10 @@ export default function DeductionForm() {
               </div>
               <div>
                 <label className={labelCls}>วันที่กระทำผิด</label>
-                <input type="date" name="date" value={formData.date} onChange={handleChange} required className={inputCls} />
+                <ThaiDateInput
+                  name="date" value={formData.date} onChange={handleChange} required ariaLabel="วันที่กระทำผิด"
+                  boxClassName={`${inputCls} group-focus-within:border-brand-500 group-focus-within:bg-white group-focus-within:shadow-[0_0_0_4px_rgba(228,187,92,.3)]`}
+                />
               </div>
             </div>
           </div>

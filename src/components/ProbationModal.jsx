@@ -3,6 +3,7 @@ import { Loader2, X, ShieldAlert } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
 import { todayLocalISO } from '../utils/date';
+import ThaiDateInput from './ui/ThaiDateInput';
 
 // ป๊อปอัปบันทึกทัณฑ์บน — ใช้ร่วมกันทุกหน้าที่ต้องการ (แดชบอร์ด/ประวัตินักเรียน ฯลฯ)
 // แทนที่จะเขียนฟอร์มซ้ำแยกแต่ละหน้า — เดิมมีแค่ในหน้า "ประวัตินักเรียน" หน้าเดียว
@@ -86,9 +87,9 @@ export default function ProbationModal({ student, editing, onClose, onSaved }) {
 
           <div>
             <label className="mb-1.5 block text-[13px] font-semibold text-ink-soft">วันที่ทำทัณฑ์บน</label>
-            <input
-              type="date" required value={date} onChange={(e) => setDate(e.target.value)}
-              className="min-h-12 w-full rounded-[13px] border-[1.5px] border-[#E3D9DA] bg-field px-3.5 py-3 text-[16px] outline-none transition focus:border-brand-500 focus:bg-white"
+            <ThaiDateInput
+              required value={date} onChange={(e) => setDate(e.target.value)} ariaLabel="วันที่ทำทัณฑ์บน"
+              boxClassName="min-h-12 w-full rounded-[13px] border-[1.5px] border-[#E3D9DA] bg-field px-3.5 py-3 text-[16px] transition group-focus-within:border-brand-500 group-focus-within:bg-white"
             />
           </div>
           <div>

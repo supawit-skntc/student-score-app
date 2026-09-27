@@ -494,6 +494,9 @@ class BotControlPanel(ctk.CTk):
             fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"],
         ).pack(side="right")
 
+        # ปักไว้เหนือปุ่มบันทึกเสมอ (นอก CTkScrollableFrame ด้านล่าง) ไม่ต้องเลื่อนจอก็เห็น
+        self._build_pin_section(card)
+
         body = ctk.CTkScrollableFrame(card, fg_color="transparent", corner_radius=0)
         body.pack(fill="both", expand=True, padx=(12, 8), pady=(0, 6))
 
@@ -518,49 +521,73 @@ class BotControlPanel(ctk.CTk):
             wraplength=320,
         ).pack(side="left", fill="x", expand=True, padx=(0, 13), pady=11)
 
-        self._build_pin_section(body)
-
     # ==========================================================
     # PIN ยืนยันก่อนรันจริง (ไม่บังคับ) — ดูคำอธิบายเต็มใน run_lock.py
+    # เดิมเป็นแค่บรรทัดข้อความเล็กๆ ปนอยู่ท้ายรายการช่องกรอก (ฟอนต์เท่าป้ายกำกับ
+    # กลุ่มฟิลด์ธรรมดา) ผู้ใช้จริงหาไม่เจอ — เลยยกเป็นกล่องของตัวเองที่มีขอบ/พื้น
+    # หลังต่างสี หัวข้อใหญ่เท่าหัวการ์ด และปุ่ม "ตั้ง PIN" เป็นปุ่มสีเต็ม (ไม่ใช่
+    # แค่เส้นขอบ) ให้เด่นเหมือนปุ่ม "บันทึกการตั้งค่า" แทน
     # ==========================================================
     def _build_pin_section(self, parent):
-        ctk.CTkFrame(parent, height=1, fg_color=COLORS["border_soft"]).pack(fill="x", pady=(4, 16))
+        card = ctk.CTkFrame(
+            parent, fg_color=COLORS["surface_muted"], corner_radius=12,
+            border_width=1, border_color=COLORS["border"],
+        )
+        card.pack(side="bottom", fill="x", padx=20, pady=(0, 12))
 
-        row = ctk.CTkFrame(parent, fg_color="transparent")
-        row.pack(fill="x")
+        head = ctk.CTkFrame(card, fg_color="transparent")
+        head.pack(fill="x", padx=16, pady=(14, 0))
+
+        title_col = ctk.CTkFrame(head, fg_color="transparent")
+        title_col.pack(side="left", fill="x", expand=True)
         ctk.CTkLabel(
-            row, text="PIN ยืนยันก่อนรันจริง", font=self.font_eyebrow, text_color="#57534e"
-        ).pack(side="left")
-        ctk.CTkLabel(row, text="ไม่บังคับ", font=self.font_hint, text_color=COLORS["text_faint"]).pack(side="right")
+            title_col, text="ตั้งรหัส PIN ป้องกันการรันจริง", font=self.font_card_title,
+            text_color=COLORS["text"], anchor="w",
+        ).pack(anchor="w")
+        self.pin_status_label = ctk.CTkLabel(
+            title_col, text="", font=self.font_hint, text_color=COLORS["text_faint"], anchor="w",
+        )
+        self.pin_status_label.pack(anchor="w", pady=(2, 0))
 
-        self.pin_status_label = ctk.CTkLabel(parent, text="", font=self.font_hint, text_color=COLORS["text_faint"])
-        self.pin_status_label.pack(fill="x", pady=(4, 6), anchor="w")
+        tag = ctk.CTkFrame(head, corner_radius=999, fg_color=COLORS["surface"], border_width=1, border_color=COLORS["border"])
+        tag.pack(side="right", anchor="n")
+        ctk.CTkLabel(
+            tag, text="ไม่บังคับ", font=self.font_hint, text_color=COLORS["text_faint"],
+        ).pack(padx=10, pady=3)
+
+        body_wrap = ctk.CTkFrame(card, fg_color="transparent")
+        body_wrap.pack(fill="x", padx=16, pady=(8, 14))
 
         ctk.CTkLabel(
-            parent,
+            body_wrap,
             text="ถ้าตั้งไว้ ทุกครั้งที่กดปุ่ม \"รันจริง\" ด้วยมือต้องกรอก PIN นี้ก่อน กันคนอื่นมาเจอโปรแกรมที่เปิด"
                  "ค้างอยู่แล้วกดรันเอง — ไม่ต้องกรอกตอนกด \"ทดสอบ\" และไม่กระทบการรันอัตโนมัติตามเวลาในขั้นตอนที่ 2",
             font=self.font_hint, text_color=COLORS["text_muted"], anchor="w", justify="left", wraplength=320,
-        ).pack(fill="x", pady=(0, 10))
+        ).pack(fill="x", pady=(0, 12))
 
-        btn_row = ctk.CTkFrame(parent, fg_color="transparent")
-        btn_row.pack(fill="x", pady=(0, 4))
+        btn_row = ctk.CTkFrame(body_wrap, fg_color="transparent")
+        btn_row.pack(fill="x")
         self.pin_set_btn = ctk.CTkButton(
             btn_row, text="ตั้ง PIN", command=self._on_set_pin,
-            font=self.font_small_button, height=36, corner_radius=8,
-            fg_color=COLORS["surface"], hover_color=COLORS["surface_muted"],
-            text_color=COLORS["accent"], border_width=1, border_color=COLORS["border"],
+            font=self.font_button, height=38, corner_radius=8,
+            fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"], text_color="white",
         )
         self.pin_set_btn.pack(side="left")
         self.pin_clear_btn = ctk.CTkButton(
             btn_row, text="ปิดใช้งาน PIN", command=self._on_clear_pin,
-            font=self.font_small_button, height=36, corner_radius=8,
+            font=self.font_small_button, height=38, corner_radius=8,
             fg_color=COLORS["surface"], hover_color=COLORS["surface_muted"],
             text_color=COLORS["text_muted"], border_width=1, border_color=COLORS["border"],
         )
         self.pin_clear_btn.pack(side="left", padx=(8, 0))
 
         self._refresh_pin_status()
+
+    # หมายเหตุ: การ์ดนี้ถูกเรียกจาก _build_settings_card() แบบ pack(side="bottom") ต่อจาก
+    # footer (ปุ่ม "บันทึกการตั้งค่า") — ไม่ได้อยู่ใน CTkScrollableFrame ของช่องกรอกบัญชี
+    # เหมือนเดิม เพราะฟีดแบ็กผู้ใช้จริงคือ "งง หาไม่เจอ" — ตอนนั้นอยู่ท้ายสุดของรายการ
+    # ที่เลื่อนได้ ต้องเลื่อนจอลงไปเจอ ทำให้พลาดได้ง่าย ย้ายมาปักไว้เหนือปุ่มบันทึกให้เห็น
+    # เสมอโดยไม่ต้องเลื่อน แลกกับพื้นที่เลื่อนของช่องกรอกที่เหลือน้อยลงเล็กน้อย
 
     def _refresh_pin_status(self):
         has = run_lock.has_pin()

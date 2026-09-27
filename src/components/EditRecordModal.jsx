@@ -1,6 +1,7 @@
 import React from 'react';
 import { Loader2, X, Save } from 'lucide-react';
 import { findOffense, OTHER_OFFENSE_POINTS } from '../data/offenses';
+import ThaiDateInput from './ui/ThaiDateInput';
 
 // ฟอนต์ input ต้อง >= 16px เสมอ — ต่ำกว่านี้ iOS Safari จะซูมจอเข้าอัตโนมัติทุก
 // ครั้งที่แตะโฟกัสช่องกรอก (มือถือ) ทำให้รู้สึกว่า UI ไม่พอดีกับจอ
@@ -35,7 +36,10 @@ export default function EditRecordModal({ record, offenses, onChange, onSubmit, 
           <div className="flex flex-col gap-4">
             <div>
               <label className={labelCls}>วันที่กระทำผิด</label>
-              <input type="date" name="date" required value={record.date} onChange={onChange} className={inputCls} />
+              <ThaiDateInput
+                name="date" required value={record.date} onChange={onChange} ariaLabel="วันที่กระทำผิด"
+                boxClassName={`${inputCls} group-focus-within:border-brand-500 group-focus-within:bg-white group-focus-within:shadow-[0_0_0_4px_rgba(228,187,92,.3)]`}
+              />
             </div>
 
             <div>

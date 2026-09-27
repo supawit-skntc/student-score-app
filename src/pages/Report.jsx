@@ -13,6 +13,7 @@ import { escapeHtml } from '../utils/html';
 import EditRecordModal from '../components/EditRecordModal';
 import Pagination from '../components/ui/Pagination';
 import { useMediaQuery } from '../utils/useMediaQuery';
+import ThaiDateInput from '../components/ui/ThaiDateInput';
 
 const PAGE_SIZE = 20;
 
@@ -476,9 +477,15 @@ export default function Report({ onViewStudent }) {
             </select>
 
             <div className="flex items-center gap-2">
-              <input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} className={filterCls} />
+              <ThaiDateInput
+                value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} ariaLabel="ตั้งแต่วันที่"
+                wrapperClassName="w-[142px]" boxClassName={`${filterCls} group-focus-within:border-brand-500`}
+              />
               <span className="text-sm text-ink-faint">ถึง</span>
-              <input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} className={filterCls} />
+              <ThaiDateInput
+                value={filterTo} onChange={(e) => setFilterTo(e.target.value)} ariaLabel="ถึงวันที่"
+                wrapperClassName="w-[142px]" boxClassName={`${filterCls} group-focus-within:border-brand-500`}
+              />
             </div>
 
             {hasActiveFilters && (
