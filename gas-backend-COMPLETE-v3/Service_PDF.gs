@@ -203,10 +203,26 @@ function generatePdfForRow_(sheet, rowIndex, recordId) {
 
   const cache = CacheService.getScriptCache();
   const inProgressKey = 'pdf_generating_' + recordId;
-  if (cache.get(inProgressKey)) {
-    return { status: "pending", message: "กำลังจัดทำเอกสาร PDF อยู่ กรุณาลองใหม่อีกครู่" };
+
+  // 🔒 "เช็กแล้วจอง" ต้องเป็นก้อนเดียว — เดิมเช็ก cache แล้วค่อย put แยกกัน ทำให้คำขอจากหน้าเว็บ
+  // (generateRecordPdf) กับ trigger เบื้องหลัง (processPendingPdfs_) ที่มาชนกันในเสี้ยววินาที
+  // ผ่านการเช็กพร้อมกันทั้งคู่ แล้วสร้าง PDF ซ้ำ 2 ไฟล์ (ไฟล์หนึ่งตกค้างเป็นขยะใน Drive) ตอนนี้ล็อกสั้นๆ
+  // เฉพาะตอนเช็ก+จอง (ไม่คลุมการสร้าง PDF ที่ใช้เวลาหลายวินาที) และอ่านช่อง PDF ซ้ำแบบสดหลังได้ล็อก
+  const lock = LockService.getScriptLock();
+  let haveLock = false;
+  try { lock.waitLock(5000); haveLock = true; } catch (e) { /* ชนกันหนัก — ใช้แค่ตัวกันซ้ำด้วย cache ต่อไป */ }
+  try {
+    const freshUrl = String(sheet.getRange(rowIndex, 14).getValue() || "");
+    if (freshUrl) {
+      return { status: "success", message: "มีเอกสาร PDF อยู่แล้ว", pdfUrl: freshUrl };
+    }
+    if (cache.get(inProgressKey)) {
+      return { status: "pending", message: "กำลังจัดทำเอกสาร PDF อยู่ กรุณาลองใหม่อีกครู่" };
+    }
+    cache.put(inProgressKey, '1', 120); // 2 นาที เผื่อเวลาสร้าง PDF ปกติเหลือเฟือ
+  } finally {
+    if (haveLock) lock.releaseLock();
   }
-  cache.put(inProgressKey, '1', 120); // 2 นาที เผื่อเวลาสร้าง PDF ปกติเหลือเฟือ
 
   try {
     const row = sheet.getRange(rowIndex, 1, 1, 13).getValues()[0];
@@ -228,7 +244,7 @@ function generateRecordPdf(token, recordId) {
   requireSession(token);
   if (!recordId) return { status: "error", message: "ไม่พบรหัสรายการ" };
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
+  const sheet = getSheet_("Records");
   if (!sheet) return { status: "error", message: "ไม่พบแผ่นงานข้อมูลระบบ" };
 
   const rowIndex = findRecordRowIndexById_(sheet, recordId);
@@ -249,19 +265,25 @@ function generateRecordPdf(token, recordId) {
 const PDF_TRIGGER_BATCH_LIMIT = 15;
 
 function processPendingPdfs_() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
+  const sheet = getSheet_("Records");
   if (!sheet) return;
 
-  const data = sheet.getDataRange().getValues();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+  // ⚡ อ่านเฉพาะคอลัมน์ N-R (pdfUrl, สถานะ RMS, เวลา, หมายเหตุ, Deleted_At) — 5 คอลัมน์แทนทั้งชีต 20 คอลัมน์
+  // เพราะ trigger นี้รันทุก 1 นาทีตลอดวัน ส่วนใหญ่ไม่มีอะไรค้างต้องทำ และเปิดอ่านรหัสรายการ (คอลัมน์ A)
+  // เฉพาะแถวที่ค้างจริงเท่านั้น
+  const meta = sheet.getRange(2, 14, lastRow - 1, 5).getValues();
   const cache = CacheService.getScriptCache();
   let processed = 0;
 
-  for (let i = 1; i < data.length && processed < PDF_TRIGGER_BATCH_LIMIT; i++) {
-    if (data[i][17]) continue; // ข้ามรายการที่ถูกลบไปแล้ว
-    if (String(data[i][13] || "")) continue; // มี PDF แล้ว ข้าม
+  for (let i = 0; i < meta.length && processed < PDF_TRIGGER_BATCH_LIMIT; i++) {
+    if (meta[i][4]) continue; // ข้ามรายการที่ถูกลบไปแล้ว (Deleted_At)
+    if (String(meta[i][0] || "")) continue; // มี PDF แล้ว ข้าม
 
-    const recordId = String(data[i][0] || "");
-    const rowIndex = i + 1;
+    const rowIndex = i + 2;
+    const recordId = String(sheet.getRange(rowIndex, 1).getValue() || "");
+    if (!recordId) continue;
     const result = generatePdfForRow_(sheet, rowIndex, recordId);
     processed++;
 

@@ -36,7 +36,7 @@ function setupProbationSheet() {
 // นั้นจะแก้ไข/ลบผ่านหน้าเว็บไม่ได้ตลอดไป (ดูคำอธิบายที่ findProbationRowById_
 // ด้านล่าง) ปลอดภัยที่จะรันซ้ำได้เสมอ (ข้ามแถวที่มีรหัสอยู่แล้ว ไม่สร้างซ้ำ)
 function backfillProbationIds_() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Probation");
+  const sheet = getSheet_("Probation");
   if (!sheet) {
     Logger.log("ยังไม่มีชีต Probation — ไม่มีอะไรให้เติม");
     return;
@@ -90,11 +90,15 @@ function invalidateProbationCache_() {
 function addProbationRecord(token, data) {
   const session = requireDisciplineStaff_(token);
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Probation");
+  const sheet = getSheet_("Probation");
   if (!sheet) return { status: "error", message: "ยังไม่ได้ตั้งค่าชีต Probation — ผู้ดูแลระบบต้องรัน setupProbationSheet() ก่อน" };
 
   const studentId = String((data && data.studentId) || '').trim();
   if (!studentId) return { status: "error", message: "ไม่พบรหัสนักเรียน" };
+  // รูปแบบเดียวกับรหัสนักเรียนในรายการตัดคะแนน (กันสูตร Sheets ในช่องนี้ ซึ่งเดิมไม่ผ่านตัวกรอง) และวันที่ต้องเป็นวันที่จริง
+  if (!/^[0-9A-Za-z-]{4,20}$/.test(studentId)) return { status: "error", message: "รหัสนักเรียนไม่ถูกต้อง" };
+  const probationDate = String((data && data.date) || '').trim();
+  if (probationDate && !isValidIsoDate_(probationDate)) return { status: "error", message: "วันที่ไม่ถูกต้อง" };
 
   // 🔒 sanitizeForSheetCell_ (ดู Utils.gs) กันทุกช่องข้อความอิสระ (ชื่อ/วันที่/
   // หมายเหตุ) ใช้ตั้งสูตร Sheets ได้ — วันที่ต้องกันด้วยเหมือนกัน แม้ฝั่งเว็บจะจำกัด
@@ -132,7 +136,7 @@ function addProbationRecord(token, data) {
 function updateProbationRecord(token, data) {
   const session = requireDisciplineStaff_(token);
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Probation");
+  const sheet = getSheet_("Probation");
   if (!sheet) return { status: "error", message: "ยังไม่ได้ตั้งค่าชีต Probation" };
 
   const found = findProbationRowById_(sheet, data && data.id);
@@ -155,7 +159,7 @@ function updateProbationRecord(token, data) {
 function deleteProbationRecord(token, id) {
   const session = requireDisciplineStaff_(token);
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Probation");
+  const sheet = getSheet_("Probation");
   if (!sheet) return { status: "error", message: "ยังไม่ได้ตั้งค่าชีต Probation" };
 
   const found = findProbationRowById_(sheet, id);
@@ -184,7 +188,7 @@ function getProbationByStudent_() {
     try { return JSON.parse(cached); } catch (e) { /* อ่านแคชไม่ขึ้น อ่านจากชีตใหม่แทน */ }
   }
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Probation");
+  const sheet = getSheet_("Probation");
   if (!sheet) return {};
 
   const data = sheet.getDataRange().getValues();
@@ -227,6 +231,19 @@ function getProbationByStudent_() {
 // ปกครอง) เพราะแค่ "ดู" ป้ายนี้ในหน้าประวัตินักเรียน ไม่ใช่ข้อมูลอ่อนไหวเท่าการ
 // บันทึกทัณฑ์บนใหม่ (ซึ่งจำกัดสิทธิ์ผ่าน addProbationRecord แล้ว)
 function getProbationStatus(token) {
-  requireSession(token);
-  return { status: "success", data: getProbationByStudent_() };
+  const session = requireSession(token);
+  const all = getProbationByStudent_();
+  if (canAccessAllRecords_(session)) return { status: "success", data: all };
+  const rows = (readActiveRecordRows_() || []).filter((row) => isRecordVisibleTo_(session, row));
+  return { status: "success", data: probationVisibleTo_(session, all, rows) };
+}
+
+// ทัณฑ์บน (รวมหมายเหตุ) เป็นข้อมูลอ่อนไหว — ผู้ใช้ทั่วไปได้เฉพาะของนักเรียนที่มีรายการให้ตัวเองเห็นอยู่แล้ว
+function probationVisibleTo_(session, byStudent, visibleRows) {
+  if (canAccessAllRecords_(session)) return byStudent;
+  const allowed = {};
+  visibleRows.forEach((row) => { allowed[String(row[3] || "").trim()] = true; });
+  const out = {};
+  Object.keys(byStudent).forEach((id) => { if (allowed[id]) out[id] = byStudent[id]; });
+  return out;
 }

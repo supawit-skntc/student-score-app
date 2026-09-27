@@ -3,9 +3,11 @@ import { Loader2 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
 import { statusForPoints } from '../data/thresholds';
-import { academicYearOf, currentAcademicYear, currentTermLabel } from '../data/academicYear';
+import { currentAcademicYear, currentTermLabel } from '../data/academicYear';
 import { isAdmin, canViewAllRecords } from '../utils/permissions';
-import { parsePoints } from '../utils/points';
+import ScopeNotice from '../components/ui/ScopeNotice';
+import PrivacyToggle from '../components/ui/PrivacyToggle';
+import { parsePoints, currentYearStudentTotals } from '../utils/points';
 import SummaryCard from '../components/ui/SummaryCard';
 import AtRiskStudentsCard from '../components/dashboard/AtRiskStudentsCard';
 import TopOffensesCard from '../components/dashboard/TopOffensesCard';
@@ -31,6 +33,9 @@ export default function Dashboard({ onViewStudent }) {
   // หาปุ่มบันทึกทัณฑ์บนยาก + ต้องค้นหานักเรียนเองก่อนถึงจะทำได้)
   const [probationByStudent, setProbationByStudent] = useState({});
   const [probationTarget, setProbationTarget] = useState(null); // { studentId, studentName } | null
+  // ชื่อนักเรียนในการ์ด "ถึงเกณฑ์ต้องดำเนินการ" และ "คะแนนสะสมสูงสุด" ซ่อนไว้ก่อนเสมอทุกครั้งที่เปิดหน้านี้
+  // (ข้อมูลอ่อนไหว เห็นได้ทันทีโดยไม่ต้องค้นหา ต่างจากหน้ารายงาน/ประวัตินักเรียนที่ต้องพิมพ์ค้นหาก่อน)
+  const [namesRevealed, setNamesRevealed] = useState(false);
 
   // จำนวนนักเรียนที่มีประวัติทัณฑ์บนทั้งหมด (ไม่ผูกกับคะแนนสะสม/ปีการศึกษา) —
   // ใช้กับการ์ดสรุปด้านล่าง โชว์เป็นตัวเลขรวมง่ายๆ กดแล้วพาไปหน้า "ประวัตินักเรียน"
@@ -152,15 +157,7 @@ export default function Dashboard({ onViewStudent }) {
     // ระเบียบข้อ 11 กำหนดให้รีเซ็ตคะแนนความประพฤติเมื่อขึ้นปีการศึกษาใหม่ (ยกเว้น
     // ประวัติทัณฑ์บนที่ยังไม่มีการเก็บแยกในระบบตอนนี้)
     const thisAcademicYear = currentAcademicYear();
-    const studentMap = new Map();
-    records.forEach((r) => {
-      if (academicYearOf(r.date) !== thisAcademicYear) return;
-      const key = r.studentId;
-      const prev = studentMap.get(key) || { name: r.displayFullName, total: 0, count: 0 };
-      prev.total += parsePoints(r.points);
-      prev.count += 1;
-      studentMap.set(key, prev);
-    });
+    const studentMap = currentYearStudentTotals(records, thisAcademicYear);
     const topStudents = [...studentMap.entries()]
       .sort((a, b) => b[1].total - a[1].total)
       .slice(0, 5);
@@ -197,6 +194,8 @@ export default function Dashboard({ onViewStudent }) {
   return (
     <div className="flex flex-col gap-[18px]">
 
+      <ScopeNotice user={currentUser} />
+
       {/* --- Summary strip --- */}
       <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
         <SummaryCard
@@ -232,12 +231,15 @@ export default function Dashboard({ onViewStudent }) {
         />
       </div>
 
+      <PrivacyToggle revealed={namesRevealed} onToggle={() => setNamesRevealed((v) => !v)} />
+
       <AtRiskStudentsCard
         students={stats.atRiskStudents}
         thisAcademicYear={stats.thisAcademicYear}
         onViewStudent={onViewStudent}
         probationByStudent={probationByStudent}
         onAddProbation={canManageProbation ? (studentId, studentName) => setProbationTarget({ studentId, studentName }) : undefined}
+        namesRevealed={namesRevealed}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[18px]">
@@ -246,6 +248,7 @@ export default function Dashboard({ onViewStudent }) {
           topStudents={stats.topStudents}
           thisAcademicYear={stats.thisAcademicYear}
           onViewStudent={onViewStudent}
+          namesRevealed={namesRevealed}
         />
       </div>
 

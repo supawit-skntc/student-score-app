@@ -48,38 +48,64 @@ STATUS_MAP = {
 LOCK_FILE_PATH = os.path.join(app_dir(), ".bot.lock")
 
 
+# ชื่อโปรแกรมที่ถือว่า "เป็นบอทของเรา" — Windows นำเลข PID ของโปรเซสที่ปิดไปแล้วกลับมาใช้กับโปรแกรมอื่นได้
+# ถ้าเช็กแค่ว่า "มี PID นี้อยู่ไหม" ล็อกที่ค้างจากบอทที่ตายไป จะดูเหมือนบอทยังรันอยู่ตลอดไป
+# (เพราะ PID เดียวกันถูกโปรแกรมอื่น เช่น เบราว์เซอร์ ยึดไปแล้ว) แล้วบอทจะไม่รันอีกเลยจนกว่าจะมีคนลบไฟล์ .bot.lock เอง
+BOT_IMAGE_NAMES = ("rms-bot-runner.exe", "rms-bot.exe", "python.exe", "pythonw.exe")
+LOCK_MAX_AGE_SECONDS = 6 * 60 * 60  # บอทรอบหนึ่งไม่มีทางรันนานเกิน 6 ชั่วโมง ล็อกที่เก่ากว่านี้ถือว่าค้าง
+
+
 def _pid_is_running(pid: int) -> bool:
+    """True ถ้า PID นี้ยังรันอยู่ "และเป็นโปรแกรมบอท" — เช็กไม่ได้ให้ตอบ True (ปลอดภัยไว้ก่อน กันรันซ้อน)"""
     try:
         output = subprocess.check_output(
-            ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
             text=True, stderr=subprocess.DEVNULL,
         )
-        return str(pid) in output
     except Exception:
-        # เช็คไม่ได้ (เช่น รันบนเครื่องที่ไม่ใช่ Windows) — ปลอดภัยไว้ก่อน ถือว่า
-        # "อาจยังรันอยู่" กันปล่อยให้รันซ้อนโดยไม่ตั้งใจ
+        # เช็คไม่ได้ (เช่น รันบนเครื่องที่ไม่ใช่ Windows) — ปลอดภัยไว้ก่อน ถือว่า "อาจยังรันอยู่"
         return True
+    for line in output.splitlines():
+        cells = [c.strip().strip('"') for c in line.split('","')]
+        if len(cells) >= 2 and cells[1] == str(pid):
+            return cells[0].strip('"').lower() in BOT_IMAGE_NAMES
+    return False
+
+
+def _lock_is_stale() -> bool:
+    """ล็อกที่มีอยู่ค้างจริงหรือไม่ — เจ้าของตายแล้ว / PID ถูกโปรแกรมอื่นยึดไป / เก่าเกินเวลาที่เป็นไปได้"""
+    try:
+        if time.time() - os.path.getmtime(LOCK_FILE_PATH) > LOCK_MAX_AGE_SECONDS:
+            return True
+        with open(LOCK_FILE_PATH, "r") as f:
+            old_pid = int(f.read().strip())
+    except (ValueError, OSError):
+        return True  # อ่านไม่ออก/ไฟล์หายระหว่างเช็ก — ถือว่าไม่มีเจ้าของจริง
+    return not _pid_is_running(old_pid)
 
 
 def acquire_lock() -> bool:
     """คืนค่า True ถ้าได้ล็อก (ไม่มีบอทตัวอื่นรันอยู่จริง ปลอดภัยที่จะรันต่อ) —
     ถ้ามีไฟล์ล็อกค้างจากโปรเซสที่ยัง "มีชีวิต" อยู่จริง คืน False ให้ผู้เรียกข้าม
-    รอบนี้ไปเฉยๆ (ไม่ใช่ error)"""
-    if os.path.exists(LOCK_FILE_PATH):
+    รอบนี้ไปเฉยๆ (ไม่ใช่ error)
+
+    สร้างไฟล์ด้วยโหมด "ห้ามมีอยู่แล้ว" (O_EXCL) — เดิมเช็กว่าไม่มีไฟล์แล้วค่อยเขียนแยกกัน ถ้าบอทสองตัวเริ่มพร้อมกัน
+    (เช่น Task Scheduler ชนกับที่คนกดรันเอง) ทั้งคู่ผ่านการเช็กแล้วเขียนทับกันเอง เหลือแค่ตัวที่สอง "ถือล็อก" อยู่"""
+    for _ in range(2):
         try:
-            with open(LOCK_FILE_PATH, "r") as f:
-                old_pid = int(f.read().strip())
-        except (ValueError, OSError):
-            old_pid = None
-
-        if old_pid and _pid_is_running(old_pid):
-            return False
-        # ไฟล์ล็อกค้างจากโปรเซสที่ตายไปแล้ว (crash กลางคันไม่ทันลบไฟล์) —
-        # ปลอดภัยที่จะยึดล็อกต่อ
-
-    with open(LOCK_FILE_PATH, "w") as f:
-        f.write(str(os.getpid()))
-    return True
+            fd = os.open(LOCK_FILE_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            if not _lock_is_stale():
+                return False
+            try:
+                os.remove(LOCK_FILE_PATH)  # ล็อกค้างจากโปรเซสที่ตายไปแล้ว — เคลียร์แล้วลองสร้างใหม่
+            except OSError:
+                pass
+            continue
+        with os.fdopen(fd, "w") as f:
+            f.write(str(os.getpid()))
+        return True
+    return False
 
 
 def release_lock() -> None:

@@ -48,36 +48,171 @@ function findRecordByClientRequestId_(rows, clientRequestId) {
   return null;
 }
 
+// ==========================================
+// 🧹 ตรวจและทำความสะอาดข้อมูลรายการตัดคะแนนที่รับมาจากหน้าเว็บ — จุดเดียวสำหรับทั้งเพิ่ม
+// (processRecordTransaction) และแก้ไข (updateRecord) เดิมสองฟังก์ชันนี้เชื่อค่าจากหน้าเว็บ
+// ตรงๆ เป็นส่วนใหญ่: รหัสนักเรียน/ระดับ/ปี/คะแนน/วันที่ไม่ผ่านตัวกรองสูตร Sheets เลย
+// (ใครเรียก API ตรงๆ ใส่ "=IMPORTXML(...)" ลงช่องรหัสนักเรียนได้ ซึ่งเป็นช่องโหว่ formula
+// injection) และไม่มีการตรวจรูปแบบ/ช่วงค่าเลย (คะแนน 99999, วันที่ปี 2569 ที่พิมพ์เป็น ค.ศ. ฯลฯ)
+//
+// คืนค่า { value: {...ข้อมูลที่ผ่านการตรวจและกรองแล้ว...}, pointsNote } หรือ { error: "ข้อความภาษาไทย" }
+// ==========================================
+const RECORD_LEVELS_ = ['ปวช.', 'ปวส.'];
+const RECORD_MAX_POINTS_ = 100;
+
+function isValidIsoDate_(str) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str);
+  if (!m) return false;
+  const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+  const dt = new Date(y, mo - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d;
+}
+
+function normalizeRecordInput_(data, session, existingTeacherName) {
+  if (!data || typeof data !== 'object') return { error: 'ไม่พบข้อมูลรายการ' };
+  const str = (v) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+  const fail = (message) => ({ error: message });
+
+  const date = str(data.date);
+  if (!isValidIsoDate_(date)) return fail('วันที่ไม่ถูกต้อง (ต้องเป็นวันที่จริง เช่น 2026-09-24)');
+  const parts = date.split('-').map(Number);
+  const now = new Date();
+  const latest = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2);
+  if (parts[0] < 2020 || new Date(parts[0], parts[1] - 1, parts[2]) > latest) {
+    return fail('วันที่อยู่นอกช่วงที่เป็นไปได้ (ตรวจว่าไม่ได้พิมพ์ปีเป็น พ.ศ.)');
+  }
+
+  const studentId = str(data.studentId);
+  if (!/^[0-9A-Za-z-]{4,20}$/.test(studentId)) return fail('รหัสนักเรียนไม่ถูกต้อง (ใช้ตัวเลข/ตัวอักษรอังกฤษ 4-20 ตัว)');
+
+  const studentName = str(data.studentName);
+  if (!studentName) return fail('กรุณาระบุชื่อ-นามสกุล');
+  if (studentName.length > 120) return fail('ชื่อ-นามสกุลยาวเกินไป');
+
+  const nameTitle = str(data.nameTitle);
+  const fieldOfStudy = str(data.fieldOfStudy);
+  const room = str(data.room);
+  if (nameTitle.length > 20 || fieldOfStudy.length > 100 || room.length > 10) return fail('ข้อมูลนักเรียนบางช่องยาวเกินไป');
+
+  const level = str(data.level);
+  if (RECORD_LEVELS_.indexOf(level) === -1) return fail('ระดับชั้นไม่ถูกต้อง (ปวช. หรือ ปวส.)');
+  const year = str(data.year);
+  if (!/^[1-4]$/.test(year)) return fail('ชั้นปีไม่ถูกต้อง');
+
+  let offense = str(data.offense);
+  let offenseEntry;
+  if (offense.indexOf('อื่นๆ') === 0) {
+    const detail = offense.replace(/^อื่นๆ\s*:?\s*/, '');
+    if (!detail) return fail('กรุณาระบุรายละเอียดความผิดอื่นๆ');
+    if (offense.length > 200) return fail('รายละเอียดความผิดยาวเกินไป');
+    offense = 'อื่นๆ: ' + detail;
+    offenseEntry = findOffenseEntry_('อื่นๆ');
+  } else {
+    offenseEntry = findOffenseEntry_(offense);
+    if (!offenseEntry) return fail('ฐานความผิดไม่ถูกต้อง');
+  }
+
+  // ข้อมูลเก่าบางแถวเก็บคะแนนเป็นค่าติดลบ (เช่น "-5") — ฝั่งเว็บอ่านด้วย parsePoints() ที่ตัดเครื่องหมายลบทิ้งอยู่แล้ว จึงรับได้เหมือนกัน (เก็บเป็นค่าบวกเสมอ)
+  const pointsRaw = str(data.points).replace(/^-/, '');
+  const points = Number(pointsRaw);
+  if (!pointsRaw || !Number.isInteger(points) || points < 1 || points > RECORD_MAX_POINTS_) {
+    return fail('คะแนนที่ตัดต้องเป็นจำนวนเต็ม 1-' + RECORD_MAX_POINTS_);
+  }
+  // 🔒 คะแนนแก้ไขเองไม่ได้ (คำขอ 27/9/69): ฐานความผิดที่มีคะแนนกำหนดไว้แล้วต้องตรงเป๊ะ ส่วน "อื่นๆ" เลือกได้
+  // เฉพาะ OTHER_OFFENSE_POINTS (ดู Config.gs) — เดิมยอมให้ต่างจากระเบียบได้แล้วแค่บันทึกโน้ตไว้ ตอนนี้ปฏิเสธเลย
+  if (offenseEntry && offenseEntry.points != null && points !== offenseEntry.points) {
+    return fail('คะแนนของฐานความผิดนี้กำหนดไว้ตายตัวที่ ' + offenseEntry.points + ' คะแนน แก้ไขเองไม่ได้');
+  }
+  if (offense.indexOf('อื่นๆ') === 0 && OTHER_OFFENSE_POINTS.indexOf(points) === -1) {
+    return fail('คะแนนสำหรับฐานความผิด "อื่นๆ" ต้องเป็น ' + OTHER_OFFENSE_POINTS.join(', ') + ' เท่านั้น');
+  }
+
+  // ครูผู้บันทึก: เชื่อชื่อจาก session (ยืนยันแล้วตอนเข้าสู่ระบบ) ก่อนเสมอ ไม่เชื่อค่าจากหน้าเว็บที่ปลอมได้
+  // ตอนแก้ไขให้คงชื่อผู้บันทึกเดิมไว้ (existingTeacherName) ไม่ให้กลายเป็นชื่อคนที่มาแก้
+  const teacherName = str(existingTeacherName || (session && session.name) || data.teacherName);
+  if (teacherName.length > 100) return fail('ชื่อครูผู้บันทึกยาวเกินไป');
+
+  return {
+    value: {
+      date: date,
+      studentId: studentId,
+      nameTitle: sanitizeForSheetCell_(nameTitle),
+      studentName: sanitizeForSheetCell_(studentName),
+      fieldOfStudy: sanitizeForSheetCell_(fieldOfStudy),
+      level: level,
+      year: year,
+      room: sanitizeForSheetCell_(room),
+      offense: sanitizeForSheetCell_(offense),
+      points: points,
+      teacherName: sanitizeForSheetCell_(teacherName),
+    },
+  };
+}
+
+// รหัสอ้างอิงการส่งจากหน้าเว็บ (UUID/สุ่ม) — รูปแบบไม่ตรงถือว่าไม่มี (ไม่ปฏิเสธคำขอทั้งก้อน)
+function cleanClientRequestId_(value) {
+  const s = String(value == null ? '' : value).trim();
+  return /^[\w-]{8,64}$/.test(s) ? s : '';
+}
+
+// 🔁 เช็กรหัสซ้ำ "แบบสด" จาก 300 แถวล่าสุดของชีตจริง (ไม่ใช้แคช) — เรียกเฉพาะตอนถือ lock แล้ว เพื่อให้
+// การกดซ้ำ/ลองใหม่ที่วิ่งชนกันพอดี (คำขอแรกยังเขียนอยู่ คำขอลองใหม่มาถึงก่อนแคชถูกล้าง) ไม่สร้างแถวซ้ำ
+// เดิมเช็กก่อนขอ lock จากแคช (เก่าได้สูงสุด 30 วินาที) จึงมีช่องว่างให้สองคำขอผ่านการเช็กพร้อมกัน
+function findRecentClientRequestId_(sheet, clientRequestId) {
+  try {
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return null;
+    const first = Math.max(2, lastRow - 299);
+    const n = lastRow - first + 1;
+    const ids = sheet.getRange(first, 20, n, 1).getValues();
+    for (let i = n - 1; i >= 0; i--) {
+      if (String(ids[i][0] || '') === clientRequestId) {
+        const row = sheet.getRange(first + i, 1, 1, 14).getValues()[0];
+        return { id: String(row[0] || ''), pdfUrl: String(row[13] || '') };
+      }
+    }
+  } catch (e) {
+    // ชีตยังไม่มีคอลัมน์ T (ยังไม่ได้รัน setupClientRequestIdColumn) — ข้ามการเช็กนี้ ไม่ให้บันทึกพัง
+  }
+  return null;
+}
+
 function processRecordTransaction(token, data) {
   const session = getSession(token);
-  // 🔒 audit log ใช้ตัวตนที่ยืนยันแล้วจาก session ไม่ใช่ data.teacherName ที่ฝั่งเว็บส่งมา
-  // เอง (ปลอมได้ — ใครเรียก API ตรงก็ใส่ชื่อคนอื่นได้) ให้ตรงกับ action อื่นๆ (แก้ไข/ลบ)
-  // ที่ใช้ session.username อยู่แล้ว — teacherName ยังเก็บลงคอลัมน์ M เพื่อแสดงผลเหมือนเดิม
-  const auditActor = session ? session.username : data.teacherName;
+  // 🔒 audit log ใช้ตัวตนที่ยืนยันแล้วจาก session ไม่ใช่ data.teacherName ที่ฝั่งเว็บส่งมาเอง
+  // (ปลอมได้ — ใครเรียก API ตรงก็ใส่ชื่อคนอื่นได้)
+  const auditActor = session ? session.username : '';
+  const targetId = data && data.studentId ? String(data.studentId).slice(0, 30) : '';
 
   try {
-    // 🚀 อ่านครั้งเดียวใช้ร่วมกันทั้ง 2 การเช็กด้านล่าง (ดูเหตุผลเต็มที่
-    // findRecordByClientRequestId_/hasSameDayDuplicate_ ด้านบน)
-    const rows = readActiveRecordRows_();
+    const clean = normalizeRecordInput_(data, session, '');
+    if (clean.error) {
+      logAudit(auditActor, "CREATE_RECORD", targetId, "REJECTED_INVALID_INPUT: " + clean.error);
+      return { status: "error", message: clean.error };
+    }
+    const rec = clean.value;
+    const clientRequestId = cleanClientRequestId_(data.clientRequestId);
 
-    if (data.clientRequestId) {
-      const existing = findRecordByClientRequestId_(rows, data.clientRequestId);
+    // 🚀 อ่านครั้งเดียว (จากแคชได้) ใช้ร่วมกันทั้ง 2 การเช็กด้านล่าง
+    const rows = readActiveRecordRows_();
+    if (rows === null) return { status: "error", message: "ไม่พบแผ่นงานข้อมูลระบบ" };
+
+    if (clientRequestId) {
+      const existing = findRecordByClientRequestId_(rows, clientRequestId);
       if (existing) {
-        logAudit(auditActor, "CREATE_RECORD", data.studentId, "SUCCESS (duplicate submit — already recorded)");
+        logAudit(auditActor, "CREATE_RECORD", rec.studentId, "SUCCESS (duplicate submit — already recorded)");
         return { status: "success", message: "บันทึกสำเร็จ", id: existing.id, pdfUrl: existing.pdfUrl };
       }
     }
 
-    // ฐานความผิดที่ห้ามตัดซ้ำในวันเดียวกัน — ให้โอกาสนักเรียนไปแก้ไขก่อน (เช่น
-    // แต่งกาย/ทรงผม) เช็กจาก noRepeatSameDay ใน OFFENSES (Config.gs — เจ้าของ
-    // ข้อมูลจริงที่เดียวของทั้งระบบแล้ว ไม่ต้อง hardcode รายชื่อซ้ำที่นี่อีก)
-    const offenseEntry = findOffenseEntry_(data.offense);
+    // ฐานความผิดที่ระเบียบกำหนดว่าห้ามบันทึกซ้ำในวันเดียวกัน (noRepeatSameDay ใน Config.gs)
+    const offenseEntry = findOffenseEntry_(rec.offense);
     if (offenseEntry && offenseEntry.noRepeatSameDay &&
-        hasSameDayDuplicate_(rows, data.studentId, data.offense, data.date)) {
-      logAudit(auditActor, "CREATE_RECORD", data.studentId, "BLOCKED_DUPLICATE_SAME_DAY: " + data.offense);
+        hasSameDayDuplicate_(rows, rec.studentId, rec.offense, rec.date)) {
+      logAudit(auditActor, "CREATE_RECORD", rec.studentId, "BLOCKED_DUPLICATE_SAME_DAY: " + rec.offense);
       return {
         status: "error",
-        message: `นักเรียนคนนี้ถูกบันทึก "${data.offense}" ไปแล้วในวันที่ ${data.date} — ฐานความผิดนี้ตัดซ้ำในวันเดียวกันไม่ได้ ให้โอกาสนักเรียนไปแก้ไขก่อน`,
+        message: `นักเรียนคนนี้ถูกบันทึก "${rec.offense}" ไปแล้วในวันที่ ${rec.date} — ฐานความผิดนี้บันทึกซ้ำในวันเดียวกันไม่ได้ตามระเบียบ`
       };
     }
 
@@ -85,54 +220,51 @@ function processRecordTransaction(token, data) {
     const timestamp = new Date().toISOString();
 
     const rowData = [
-      // 🔒 sanitizeForSheetCell_ ครอบทุกช่องที่เป็นข้อความอิสระของผู้ใช้ (ดู
-      // คำอธิบายเต็มที่ Utils.gs) กันสูตร Sheets แอบรันถ้ามีคนเปิดชีตตรงๆ
-      uuid, timestamp, data.date, data.studentId, sanitizeForSheetCell_(data.nameTitle || ""),
-      sanitizeForSheetCell_(data.studentName), sanitizeForSheetCell_(data.fieldOfStudy), data.level, data.year,
-      sanitizeForSheetCell_(data.room), sanitizeForSheetCell_(data.offense), data.points,
-      sanitizeForSheetCell_(data.teacherName),
-      // 🚀 N: pdfUrl — เว้นว่างไว้ก่อนเสมอ "ไม่" สร้าง PDF ในคำขอนี้อีกต่อไป (เดิม
-      // สร้าง PDF ก่อนเขียนแถว ทำให้ปุ่มบันทึกช้า (หลายวินาที) และถ้าขั้นตอนสร้าง
-      // PDF พังกลางทาง รายการทั้งหมดจะไม่ถูกบันทึกเลยแม้แต่แถวเดียว) ตอนนี้บันทึก
-      // แถวข้อมูลก่อนทันที (เร็ว แทบไม่มีทางล้มเหลว) แล้วให้ฝั่งเว็บเรียก action
-      // "generateRecordPdf" ต่อทันทีแบบแยกคำขอ (ดู Service_PDF.gs) — ถ้าคำขอนั้น
-      // ล้มเหลว/หายกลางทาง ข้อมูลนักเรียนก็ยังปลอดภัยอยู่แล้ว ไม่หายไปด้วย และมี
-      // trigger เบื้องหลัง (processPendingPdfs_) คอยสร้างซ้ำให้อัตโนมัติทุก 1 นาที
+      // A-M (ข้อมูลผ่านการตรวจและกรองสูตรแล้วจาก normalizeRecordInput_ ทุกช่อง)
+      uuid, timestamp, rec.date, rec.studentId, rec.nameTitle, rec.studentName, rec.fieldOfStudy,
+      rec.level, rec.year, rec.room, rec.offense, rec.points, rec.teacherName,
+      // N: pdfUrl — เว้นว่างไว้ก่อนเสมอ ไม่สร้าง PDF ในคำขอนี้ (ให้ฝั่งเว็บเรียก generateRecordPdf ต่อ และมี
+      // trigger เบื้องหลัง processPendingPdfs_ คอยสร้างซ้ำทุก 1 นาที ดู Service_PDF.gs)
       "",
-      // 🆕 คอลัมน์ O, P, Q — ให้ RPA Bot (Python) ใช้เป็นคิวงานอ่าน/เขียนสถานะ
-      // ผ่าน Google Sheets API โดยตรง (ไม่ผ่าน GAS) ค่าเริ่มต้นทุกรายการใหม่คือ
-      // "pending" แปลว่า "ยังไม่เคยถูกส่งไปบันทึกใน RMS"
+      // O, P, Q — สถานะคิวของ RPA Bot: "pending" = ยังไม่เคยส่งไปบันทึกใน RMS
       "pending", "", "",
-      "", // R: Deleted_At (ว่างไว้ — ยังไม่ถูกลบ)
-      // 🆕 S: Created_By_Username — ใช้กับ getMyRecords() ให้ครูทั่วไปเห็นเฉพาะ
-      // รายการที่ตัวเองบันทึก (admin ยังเห็นทุกรายการเหมือนเดิม) รายการเก่าก่อน
-      // เพิ่มคอลัมน์นี้จะว่างไว้ ซึ่ง getMyRecords() ถือว่า "เห็นได้ทุกคน" เพื่อไม่
-      // ให้ข้อมูลเก่าหายไปจากทุกคนกะทันหันตอนเปิดใช้ฟีเจอร์นี้ครั้งแรก
+      "", // R: Deleted_At (ว่าง = ยังไม่ถูกลบ)
+      // S: Created_By_Username — ใช้กับ getMyRecords() ให้ครูทั่วไปเห็นเฉพาะรายการของตัวเอง
       session ? session.username : "",
-      // 🆕 T: Client_Request_Id — ดูคำอธิบายเต็มที่ findRecordByClientRequestId_
-      // ด้านบน ใช้กันบันทึกซ้ำเวลา response หายกลางทางแม้บันทึกจริงสำเร็จแล้ว
-      data.clientRequestId || "",
+      // T: Client_Request_Id — กันบันทึกซ้ำเวลา response หายกลางทาง
+      clientRequestId,
     ];
 
-    // 🔒 ขอ lock เฉพาะช่วง "เขียนแถวใหม่" ซึ่งเป็นขั้นตอนเดียวที่ต้องกันชนกัน
-    // จริงๆ (สองคนกด appendRow พร้อมกันเป๊ะอาจไปเขียนทับแถวว่างเดียวกัน) ใช้เวลา
-    // แค่เสี้ยววินาที ไม่ใช่หลายวินาทีเหมือนตอนคลุม PDF ไปด้วย
+    // 🔒 ขอ lock เฉพาะช่วง "เช็กซ้ำสด + เขียนแถวใหม่" (แค่เสี้ยววินาที ไม่คลุมการสร้าง PDF)
     const lock = LockService.getScriptLock();
-    lock.waitLock(10000);
     try {
-      const sheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName("Records");
+      lock.waitLock(10000);
+    } catch (lockErr) {
+      return { status: "error", message: "ระบบกำลังบันทึกรายการของผู้อื่นอยู่ กรุณากดบันทึกอีกครั้งในอีกสักครู่" };
+    }
+    try {
+      const sheet = getSheet_("Records");
+      if (!sheet) return { status: "error", message: "ไม่พบแผ่นงานข้อมูลระบบ" };
+
+      if (clientRequestId) {
+        const dup = findRecentClientRequestId_(sheet, clientRequestId);
+        if (dup) {
+          logAudit(auditActor, "CREATE_RECORD", rec.studentId, "SUCCESS (duplicate submit — already recorded)");
+          return { status: "success", message: "บันทึกสำเร็จ", id: dup.id, pdfUrl: dup.pdfUrl };
+        }
+      }
+
       sheet.appendRow(rowData);
       invalidateRecordsCache_();
     } finally {
       lock.releaseLock();
     }
 
-    logAudit(auditActor, "CREATE_RECORD", data.studentId, "SUCCESS");
-
+    logAudit(auditActor, "CREATE_RECORD", rec.studentId, "SUCCESS");
     return { status: "success", message: "บันทึกสำเร็จ", id: uuid, pdfUrl: "" };
 
   } catch (e) {
-    logAudit(auditActor, "CREATE_RECORD", data.studentId, "FAILED: " + e.message);
+    logAudit(auditActor, "CREATE_RECORD", targetId, "FAILED: " + e.message);
     return { status: "error", message: "ระบบเกิดข้อผิดพลาด: " + e.message };
   }
 }
@@ -166,7 +298,7 @@ function readActiveRecordRows_() {
     }
   }
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
+  const sheet = getSheet_("Records");
   if (!sheet) return null;
 
   const data = sheet.getDataRange().getValues();
@@ -254,7 +386,24 @@ function getCachedRecordRowIndex_(id) {
   }
 }
 
-function mapRowToRecord_(row) {
+// 🔒 ใครเห็นรายการไหน (ตัดสินที่เซิร์ฟเวอร์เสมอ — หน้าเว็บไม่มีทางเห็นเกินสิทธิ์)
+//  - ผู้ดูแลระบบ/กลุ่มเห็นทุกรายการ: เห็นทั้งหมด
+//  - ครูผู้สอน: รายการที่ตัวเองบันทึก + รายการของนักเรียนใน "สาขาที่รับผิดชอบ" (ตั้งที่หน้าจัดการผู้ใช้งาน)
+//    รายการเก่าที่ไม่มีเจ้าของ (ก่อนมีคอลัมน์ S) นับเป็นของครูที่ชื่อ-นามสกุลตรงกับช่อง "ครูผู้บันทึก"
+// เดิม getRecords() ส่ง "ทุกรายการ" ให้ผู้ใช้ทุกคนที่เข้าสู่ระบบ (ครูเปิดแผงควบคุม/ประวัตินักเรียนแล้วเห็นของทั้งวิทยาลัย)
+function isRecordVisibleTo_(session, row) {
+  if (canAccessAllRecords_(session)) return true;
+  const createdBy = String(row[18] || "").trim();
+  if (createdBy) {
+    if (createdBy === session.username) return true;
+  } else if (session.name && String(row[12] || "").trim() === session.name) {
+    return true;
+  }
+  const majors = session.majors || [];
+  return majors.length > 0 && majors.indexOf(String(row[6] || "").trim()) !== -1;
+}
+
+function mapRowToRecord_(row, session) {
   // formatThaiDate_/toIsoDateString_ (Utils.gs) รองรับทั้ง Date object และ
   // string อยู่แล้ว คืนค่า "" เองถ้า rawDate ว่าง ไม่ต้องเช็ก if (rawDate) ซ้ำที่นี่
   let rawDate = row[2];
@@ -283,6 +432,10 @@ function mapRowToRecord_(row) {
     rmsSyncStatus: String(row[14] || ""),
     rmsSyncedAt: String(row[15] || ""),
     rmsNote: String(row[16] || ""),
+    // ปุ่ม "แก้ไข" ในหน้าเว็บแสดงเฉพาะรายการที่แก้ได้จริง (ผู้ดูแล/กลุ่มเห็นทุกรายการ หรือเจ้าของรายการ)
+    // — ตัดสินที่เซิร์ฟเวอร์ตรงนี้ ส่วนการบังคับจริงอยู่ที่ updateRecord (เห็นรายการ ≠ แก้ได้)
+    canEdit: !session || canAccessAllRecords_(session) || !String(row[18] || "").trim() ||
+      String(row[18]).trim() === session.username,
   };
 }
 
@@ -290,26 +443,21 @@ function mapRowToRecord_(row) {
 // 2. ฟังก์ชันดึงข้อมูล "ทั้งหมด" ให้หน้า React — ใช้กับหน้าประวัตินักเรียน/แผง
 // ควบคุมที่ต้องดูคะแนนสะสมของนักเรียนทุกคนได้ ไม่ว่าใครจะเป็นคนบันทึกก็ตาม
 // ==========================================
-function getRecords() {
+function getRecords(token) {
+  const session = requireSession(token);
   const rows = readActiveRecordRows_();
   if (rows === null) return { status: "error", message: "ไม่พบแผ่นงานข้อมูลระบบ" };
-  // 🚀 แนบ probationByStudent (Service_Probation.gs) มาในคำตอบเดียวกันเลย — เดิม
-  // Dashboard.jsx/StudentProfile.jsx เรียก getRecords + getProbationStatus แยก
-  // กันทุกครั้งที่เปิดหน้า ทำให้ต้องรอ round-trip ไป Apps Script 2 รอบ (รอบละ ~2
-  // วินาทีไม่ว่าข้อมูลจะเยอะแค่ไหน) ดูเหตุผลเต็มที่ getProbationByStudent_()
-  //
-  // 🛡️ ครอบ try/catch แยกไว้ต่างหาก — ถ้าชีต Probation มีปัญหา (เช่นโดนแก้ไข
-  // ด้วยมือจนข้อมูลผิดรูป หรือ Google เกิดโควตาแปลกๆ ชั่วคราว) ต้องไม่ทำให้รายการ
-  // ตัดคะแนนทั้งหมด (ข้อมูลหลักของระบบ) พลอยโหลดไม่ขึ้นไปด้วย — คนละความเสี่ยงกัน
-  // เดิม (ตอนยังเรียกแยก action กัน) ปัญหาที่ชีต Probation กระทบแค่ป้ายทัณฑ์บน
-  // เท่านั้น ไม่เคยทำให้หน้าแผงควบคุม/รายงาน/ประวัตินักเรียนล่มไปด้วยทั้งหน้า
+
+  const visibleRows = canAccessAllRecords_(session) ? rows : rows.filter((row) => isRecordVisibleTo_(session, row));
+
+  // ทัณฑ์บนมากับคำตอบเดียวกัน (ไม่ต้องยิงแยก) — ครูทั่วไปได้เฉพาะของนักเรียนที่ตัวเองเห็นรายการอยู่
   let probationByStudent = {};
   try {
-    probationByStudent = getProbationByStudent_();
+    probationByStudent = probationVisibleTo_(session, getProbationByStudent_(), visibleRows);
   } catch (e) {
     console.error('โหลดข้อมูลทัณฑ์บนไม่สำเร็จ (ไม่กระทบรายการตัดคะแนนหลัก): ' + e);
   }
-  return { status: "success", data: rows.map(mapRowToRecord_).reverse(), probationByStudent: probationByStudent };
+  return { status: "success", data: visibleRows.map((row) => mapRowToRecord_(row, session)).reverse(), probationByStudent: probationByStudent };
 }
 
 // ==========================================
@@ -319,50 +467,48 @@ function getRecords() {
 // เพื่อไม่ให้ข้อมูลเก่าหายไปกะทันหัน)
 // ==========================================
 function getMyRecords(token) {
-  const session = requireSession(token);
-  const canSeeAll = canAccessAllRecords_(session);
-
-  const rows = readActiveRecordRows_();
-  if (rows === null) return { status: "error", message: "ไม่พบแผ่นงานข้อมูลระบบ" };
-
-  const visibleRows = rows.filter((row) => {
-    if (canSeeAll) return true;
-    const createdBy = String(row[18] || "").trim();
-    return !createdBy || createdBy === session.username;
-  });
-
-  return { status: "success", data: visibleRows.map(mapRowToRecord_).reverse() };
+  // ชื่อเดิมที่หน้าเว็บรุ่นเก่ายังเรียกอยู่ — ตอนนี้ขอบเขตเดียวกับ getRecords ทุกประการ (ตัดสินตามสิทธิ์ของผู้เรียก)
+  return getRecords(token);
 }
 
 // ==========================================
-// 3. ฟังก์ชันอัปเดตข้อมูลแบบ Full Option และสร้าง PDF ใหม่
+// 3. ฟังก์ชันอัปเดตข้อมูล (ตรวจข้อมูล + เขียนครั้งเดียว — PDF ใหม่สร้างแยกเบื้องหลัง)
 // ==========================================
 function updateRecord(token, updatedData) {
-  // ใช้ session ปัจจุบันบันทึก audit log แทน updatedData.teacherName เพราะฟิลด์นั้น
-  // เป็นชื่อคนที่ "สร้าง" รายการตอนแรก ไม่ใช่คนที่กำลังแก้ไขอยู่ตอนนี้ — ถ้าครูอีก
-  // คนมาแก้รายการของเพื่อนร่วมงาน log เดิมจะโยนความผิดให้คนแรกผิดตัว
-  const session = getSession(token);
+  // ใช้ session ปัจจุบันบันทึก audit log (ตัวตนของ "คนที่กำลังแก้ไข") ไม่ใช่ updatedData.teacherName
+  const session = requireSession(token);
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
+  const sheet = getSheet_("Records");
   if (!sheet) return { status: "error", message: "ไม่พบแผ่นงานข้อมูลระบบ" };
 
-  const rowIndex = findRecordRowIndexById_(sheet, updatedData.id);
+  const rowIndex = findRecordRowIndexById_(sheet, updatedData && updatedData.id);
   if (rowIndex === null) return { status: "error", message: "ไม่พบข้อมูลที่ต้องการแก้ไข" };
 
-  // 🔒 ครูทั่วไปแก้ไขได้เฉพาะรายการที่ตัวเองบันทึก (หรือรายการเก่าที่ไม่มีเจ้าของ —
-  // กฎเดียวกับที่ getMyRecords ใช้ตัดสินว่าใครเห็นรายการไหน) — เดิมหน้ารายงานซ่อนปุ่ม
-  // แก้ไขของรายการคนอื่นให้เท่านั้น แต่ตัว API ไม่ตรวจอะไรเลย ใครก็ตามที่ login อยู่
-  // ส่ง id ของรายการใดก็ได้มาแก้ไข (รวมถึงเปลี่ยนคะแนน/ฐานความผิดของนักเรียนคนอื่น)
-  // ได้ตรงๆ — คอลัมน์ S (19) = Created_By_Username
+  // ⚡ อ่านทั้งแถวครั้งเดียว (เดิมอ่านทีละเซลล์ 2 ครั้ง + เขียนทีละเซลล์ 14 ครั้ง — ทุกครั้งคือการเรียก
+  // บริการ Spreadsheet หนึ่งรอบ ทำให้กดบันทึกการแก้ไขช้าเกินจำเป็น)
+  const row = sheet.getRange(rowIndex, 1, 1, 20).getValues()[0];
+  if (row[17]) return { status: "error", message: "รายการนี้ถูกลบไปแล้ว แก้ไขไม่ได้" };
+
+  // 🔒 ตรวจสิทธิ์ที่ฝั่งเซิร์ฟเวอร์: ผู้ดูแลระบบ/กลุ่มเห็นทุกรายการแก้ได้ทุกรายการ ครูทั่วไปแก้ได้เฉพาะของตัวเอง
+  // (แถวเก่าก่อนมีคอลัมน์ S ที่ว่าง ถือว่าแก้ได้)
   if (!canAccessAllRecords_(session)) {
-    const createdBy = String(sheet.getRange(rowIndex, 19).getValue() || "").trim();
+    const createdBy = String(row[18] || "").trim();
     if (createdBy && createdBy !== session.username) {
-      logAudit(session.username, "UPDATE_RECORD", updatedData.studentId, "DENIED_NOT_OWNER");
+      logAudit(session.username, "UPDATE_RECORD", String(row[3] || ""), "DENIED_NOT_OWNER");
       return { status: "error", message: "คุณไม่มีสิทธิ์แก้ไขรายการที่ผู้อื่นเป็นผู้บันทึก" };
     }
   }
 
-  const oldPdfUrl = String(sheet.getRange(rowIndex, 14).getValue());
+  // ตรวจ/กรองข้อมูลด้วยกฎชุดเดียวกับตอนเพิ่ม และคงชื่อครูผู้บันทึกเดิมไว้
+  const clean = normalizeRecordInput_(updatedData, session, String(row[12] || ""));
+  if (clean.error) {
+    logAudit(session.username, "UPDATE_RECORD", String(row[3] || ""), "REJECTED_INVALID_INPUT: " + clean.error);
+    return { status: "error", message: clean.error };
+  }
+  const rec = clean.value;
+
+  // ลบไฟล์ PDF เดิมทิ้ง (เนื้อหาเปลี่ยนแล้ว PDF เก่าไม่ตรงอีกต่อไป)
+  const oldPdfUrl = String(row[13] || "");
   try {
     if (oldPdfUrl) {
       const fileIdMatch = oldPdfUrl.match(/[-\w]{25,}/);
@@ -370,31 +516,20 @@ function updateRecord(token, updatedData) {
     }
   } catch (err) { console.error("ไม่สามารถลบไฟล์ PDF เดิมได้: " + err); }
 
-  const newPdfUrl = generatePDF(updatedData, updatedData.id);
-
-  // 🔒 sanitizeForSheetCell_ ครอบทุกช่องที่เป็นข้อความอิสระของผู้ใช้ เหมือนกับ
-  // processRecordTransaction() ด้านบน (ดูคำอธิบายเต็มที่ Utils.gs)
-  sheet.getRange(rowIndex, 3).setValue(updatedData.date);
-  sheet.getRange(rowIndex, 4).setValue(updatedData.studentId);
-  sheet.getRange(rowIndex, 5).setValue(sanitizeForSheetCell_(updatedData.nameTitle));
-  sheet.getRange(rowIndex, 6).setValue(sanitizeForSheetCell_(updatedData.studentName));
-  sheet.getRange(rowIndex, 7).setValue(sanitizeForSheetCell_(updatedData.fieldOfStudy));
-  sheet.getRange(rowIndex, 8).setValue(updatedData.level);
-  sheet.getRange(rowIndex, 9).setValue(updatedData.year);
-  sheet.getRange(rowIndex, 10).setValue(sanitizeForSheetCell_(updatedData.room));
-  sheet.getRange(rowIndex, 11).setValue(sanitizeForSheetCell_(updatedData.offense));
-  sheet.getRange(rowIndex, 12).setValue(updatedData.points);
-  sheet.getRange(rowIndex, 13).setValue(sanitizeForSheetCell_(updatedData.teacherName));
-  sheet.getRange(rowIndex, 14).setValue(newPdfUrl);
-
-  // 🆕 แก้ไขเนื้อหาแล้ว ควรส่งกลับไป sync ใหม่ใน RMS อีกครั้ง
-  // (ไม่แตะ RMS_Synced_At/RMS_Note เดิม เผื่ออยากเทียบย้อนหลังว่าครั้งก่อน sync ไว้เมื่อไร)
-  sheet.getRange(rowIndex, 15).setValue("pending");
+  // ⚡ เขียนคอลัมน์ C-O ในครั้งเดียว: C วันที่ D รหัส E คำนำหน้า F ชื่อ G สาขา H ระดับ I ปี J ห้อง
+  // K ฐานความผิด L คะแนน M ครูผู้บันทึก N pdfUrl (ล้างเป็นว่าง) O สถานะ RMS (pending)
+  // PDF ใหม่ "ไม่" สร้างในคำขอนี้แล้ว (เดิมสร้างที่นี่ตรงๆ ทำให้บันทึกการแก้ไขช้าหลายวินาที และถ้าพังกลางทาง
+  // ข้อมูลที่แก้จะหายทั้งก้อน) — ฝั่งเว็บเรียก generateRecordPdf ต่อ และ trigger เบื้องหลังสร้างซ้ำให้ทุกนาที
+  // แก้ไขเนื้อหาแล้วส่งกลับไป sync ใหม่ใน RMS (ไม่แตะ RMS_Synced_At/RMS_Note เดิม)
+  sheet.getRange(rowIndex, 3, 1, 13).setValues([[
+    rec.date, rec.studentId, rec.nameTitle, rec.studentName, rec.fieldOfStudy, rec.level, rec.year,
+    rec.room, rec.offense, rec.points, rec.teacherName, "", "pending",
+  ]]);
   invalidateRecordsCache_();
 
-  logAudit(session.username, "UPDATE_RECORD", updatedData.studentId, "SUCCESS");
+  logAudit(session.username, "UPDATE_RECORD", rec.studentId, "SUCCESS");
 
-  return { status: "success", message: "อัปเดตข้อมูลและเอกสาร PDF เรียบร้อยแล้ว", newPdfUrl: newPdfUrl };
+  return { status: "success", message: "บันทึกการแก้ไขเรียบร้อยแล้ว กำลังจัดทำเอกสาร PDF ใหม่", newPdfUrl: "" };
 }
 
 // ==========================================
@@ -410,7 +545,7 @@ function updateRecord(token, updatedData) {
 function deleteRecord(token, id) {
   const session = requireAdmin(token);
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
+  const sheet = getSheet_("Records");
   if (!sheet) return { status: "error", message: "ไม่พบแผ่นงานข้อมูลระบบ" };
 
   // 🚀 ลองตำแหน่งแถวจากแคชก่อน (getSyncQueue() เก็บไว้ให้บอท — ดู
@@ -444,7 +579,7 @@ function deleteRecord(token, id) {
 // เพื่อเตรียมคอลัมน์ R (Deleted_At) สำหรับฟีเจอร์ "ลบรายการ" (soft delete)
 // ==========================================
 function setupDeleteColumn() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
+  const sheet = getSheet_("Records");
   if (!sheet) throw new Error("ไม่พบแผ่นงาน Records");
 
   const headerCell = sheet.getRange(1, 18); // คอลัมน์ R
@@ -460,7 +595,7 @@ function setupDeleteColumn() {
 // (Created_By_Username) สำหรับฟีเจอร์ "ครูทั่วไปเห็นเฉพาะรายการที่ตัวเองบันทึก"
 // ==========================================
 function setupCreatedByColumn() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
+  const sheet = getSheet_("Records");
   if (!sheet) throw new Error("ไม่พบแผ่นงาน Records");
 
   const headerCell = sheet.getRange(1, 19); // คอลัมน์ S
@@ -477,7 +612,7 @@ function setupCreatedByColumn() {
 // "บันทึกข้อมูล" — ดูคำอธิบายเต็มที่ findRecordByClientRequestId_
 // ==========================================
 function setupClientRequestIdColumn() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
+  const sheet = getSheet_("Records");
   if (!sheet) throw new Error("ไม่พบแผ่นงาน Records");
 
   const headerCell = sheet.getRange(1, 20); // คอลัมน์ T

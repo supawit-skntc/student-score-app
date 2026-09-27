@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ShieldAlert, Copy, Check } from 'lucide-react';
+import { maskThaiName } from '../../utils/privacy';
 
 const SCORE_BOX_CLS = {
   notice: 'bg-gold-50 text-gold-700',
@@ -29,7 +30,7 @@ const FILTER_OPTIONS = [
 // เลย ไม่ต้องไปค้นหานักเรียนซ้ำที่หน้า "ประวัตินักเรียน" อีกรอบ (เดิมต้องทำแบบ
 // นั้น ผู้ใช้งานจริงบอกว่าหาปุ่มไม่เจอ + ขั้นตอนเยอะเกินไป) เพราะการ์ดนี้ก็คือ
 // รายชื่อที่ "ต้องดำเนินการ" อยู่แล้วตามคำจำกัดความของมันเอง
-export default function AtRiskStudentsCard({ students, thisAcademicYear, onViewStudent, probationByStudent = {}, onAddProbation }) {
+export default function AtRiskStudentsCard({ students, thisAcademicYear, onViewStudent, probationByStudent = {}, onAddProbation, namesRevealed = false }) {
   const [filterKey, setFilterKey] = useState('all');
   const [copied, setCopied] = useState(false);
 
@@ -40,6 +41,7 @@ export default function AtRiskStudentsCard({ students, thisAcademicYear, onViewS
 
   // คัดลอกรายชื่อ (พร้อมคะแนน) ไปวางต่อในเอกสารสรุปรายชื่อเข้าค่ายได้เลย
   const handleCopy = async () => {
+    if (!namesRevealed && !window.confirm('รายชื่อบนจอยังซ่อนอยู่ — คัดลอกชื่อจริงทั้งหมดไปยังคลิปบอร์ดหรือไม่?')) return;
     const text = filtered.map((s) => `${s.name} (${s.total} คะแนน)`).join('\n');
     try {
       await navigator.clipboard.writeText(text);
@@ -103,7 +105,7 @@ export default function AtRiskStudentsCard({ students, thisAcademicYear, onViewS
               </div>
               <div className="flex-1 min-w-[150px]">
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <p className="text-[14.5px] font-semibold text-ink truncate">{s.name}</p>
+                  <p className="text-[14.5px] font-semibold text-ink truncate">{namesRevealed ? s.name : maskThaiName(s.name)}</p>
                   {probationByStudent[s.studentId]?.length > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-ink/[0.08] px-2 py-0.5 text-[10.5px] font-semibold text-ink-soft shrink-0">
                       <ShieldAlert size={10} /> เคยทำทัณฑ์บนแล้ว

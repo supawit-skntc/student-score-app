@@ -31,7 +31,7 @@ function getStaffEmails_() {
     try { return JSON.parse(cached); } catch (e) { /* แคชอ่านไม่ขึ้น อ่านจากชีตใหม่แทน */ }
   }
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Users");
+  const sheet = getSheet_("Users");
   if (!sheet) return [];
 
   const data = sheet.getDataRange().getValues();
@@ -59,30 +59,65 @@ function invalidateStaffEmailsCache_() {
   CacheService.getScriptCache().remove(STAFF_EMAILS_CACHE_KEY);
 }
 
+// 🎓 คอลัมน์ G "Majors" = สาขาวิชาที่ครูผู้สอนรับผิดชอบ คั่นด้วยจุลภาค (ว่าง = เห็นเฉพาะรายการที่ตัวเองบันทึก)
+function parseMajors_(cell) {
+  return String(cell == null ? '' : cell).split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+// รับ undefined (= ไม่แตะ), อาร์เรย์ หรือข้อความคั่นจุลภาค — คืน { value } หรือ { error }
+function normalizeMajorsInput_(input) {
+  if (input === undefined) return { value: undefined };
+  const list = Array.isArray(input) ? input : parseMajors_(input);
+  const unique = [];
+  for (let i = 0; i < list.length; i++) {
+    const name = String(list[i]).trim();
+    if (!name) continue;
+    if (MAJOR_NAMES.indexOf(name) === -1) return { error: 'สาขาวิชา "' + name.slice(0, 40) + '" ไม่อยู่ในรายการที่กำหนด' };
+    if (unique.indexOf(name) === -1) unique.push(name);
+  }
+  return { value: unique };
+}
+
+// ชีต Users เดิมมี 6 คอลัมน์ — เพิ่มคอลัมน์ G + หัวตารางให้เองตอนเขียนสาขาครั้งแรก (หรือรัน setupMajorsColumn() ครั้งเดียวก็ได้)
+function ensureUsersMajorsColumn_(sheet) {
+  if (sheet.getMaxColumns() < 7) sheet.insertColumnsAfter(sheet.getMaxColumns(), 7 - sheet.getMaxColumns());
+  const header = sheet.getRange(1, 7);
+  if (!header.getValue()) header.setValue("Majors");
+}
+
+function setupMajorsColumn() {
+  const sheet = getSheet_("Users");
+  if (!sheet) throw new Error("ไม่พบแผ่นงาน Users");
+  ensureUsersMajorsColumn_(sheet);
+  Logger.log("ตั้งค่าคอลัมน์ Majors เรียบร้อยแล้ว");
+}
+
 function getUsersList(token) {
   requireAdmin(token);
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Users");
+  const sheet = getSheet_("Users");
   if (!sheet) return { status: "error", message: "ไม่พบฐานข้อมูลผู้ใช้งาน" };
 
   // 🚀 อ่านเฉพาะคอลัมน์ A-D (ชื่อผู้ใช้/รหัสผ่านแฮช/ชื่อ/บทบาท) แทนทั้งชีต — ไม่ต้อง
   // ดึง Salt/Email ที่ไม่ได้ใช้ และไม่ต้องให้ข้อมูลอ่อนไหวเข้ามาอยู่ในหน่วยความจำมาก
   // กว่าที่จำเป็น (คอลัมน์ B ถูกอ่านมาด้วยเพราะอยู่กลางช่วง แต่ไม่เคยถูกใส่ใน response)
   const lastRow = sheet.getLastRow();
-  const data = lastRow >= 2 ? sheet.getRange(2, 1, lastRow - 1, 4).getValues() : [];
+  const cols = Math.min(7, Math.max(4, sheet.getLastColumn()));
+  const data = lastRow >= 2 ? sheet.getRange(2, 1, lastRow - 1, cols).getValues() : [];
   const users = [];
   for (let i = 0; i < data.length; i++) {
     if (!data[i][0]) continue;
     users.push({
       username: String(data[i][0]).trim(),
       fullName: String(data[i][2]).trim(),
-      role: String(data[i][3]).trim()
+      role: String(data[i][3]).trim(),
+      majors: cols >= 7 ? parseMajors_(data[i][6]) : []
       // ⚠️ ห้ามส่ง Password_Hash (คอลัมน์ B) กลับไปฝั่ง client เด็ดขาด
     });
   }
   // 🚀 แนบ roleTiers มาในคำตอบเดียวกัน (เดิมหน้านี้ยิง getRoleTiers แยกอีก 1 รอบทุกครั้ง
   // ที่เปิดหน้า = อีก ~2 วินาที ทั้งที่เป็นค่าคงที่ในโค้ด ดู getRoleTiers ด้านล่าง)
-  return { status: "success", data: users, roleTiers: buildRoleTierMap_() };
+  return { status: "success", data: users, roleTiers: buildRoleTierMap_(), majorNames: MAJOR_NAMES };
 }
 
 // ==========================================
@@ -102,11 +137,15 @@ function getRoleTiers(token) {
 function createUser(token, newUserData) {
   requireAdmin(token);
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Users");
+  const sheet = getSheet_("Users");
   if (!sheet) return { status: "error", message: "ไม่พบฐานข้อมูลผู้ใช้งาน" };
 
   const username = String(newUserData.username || '').trim();
   if (!username) return { status: "error", message: "กรุณาระบุชื่อผู้ใช้งาน" };
+  // ตัวอักษรอังกฤษ/ตัวเลข/ไทย และ . _ - เท่านั้น 2-40 ตัว (กันชื่อที่ขึ้นต้นด้วย = + @ ที่ชีตอ่านเป็นสูตร)
+  if (!/^[A-Za-z0-9\u0E00-\u0E7F][A-Za-z0-9._\u0E00-\u0E7F-]{1,39}$/.test(username)) {
+    return { status: "error", message: "ชื่อผู้ใช้งานใช้ได้เฉพาะตัวอักษร ตัวเลข . _ - (2-40 ตัว และขึ้นต้นด้วยตัวอักษรหรือตัวเลข)" };
+  }
 
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
@@ -115,12 +154,15 @@ function createUser(token, newUserData) {
     }
   }
 
-  if (!newUserData.password || String(newUserData.password).length < 8) {
+  if (!newUserData.password || String(newUserData.password).trim().length < 8) {
     return { status: "error", message: "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร" };
   }
   if (!isKnownRole_(newUserData.role)) {
     return { status: "error", message: "บทบาทไม่ถูกต้อง กรุณาเลือกบทบาทจากรายการ" };
   }
+
+  const majors = normalizeMajorsInput_(newUserData.majors);
+  if (majors.error) return { status: "error", message: majors.error };
 
   const salt = generateSalt();
   const saltedHash = hashPassword(String(newUserData.password).trim(), salt);
@@ -131,7 +173,8 @@ function createUser(token, newUserData) {
   // 🔒 sanitizeForSheetCell_ (ดู Utils.gs) กันช่องชื่อ-นามสกุลใช้ตั้งสูตร Sheets
   // ได้ — ความเสี่ยงต่ำกว่าฝั่ง Records เพราะหน้านี้ admin เท่านั้นที่เขียนถึง แต่
   // ทำไว้เผื่อบัญชี admin ถูกขโมย/ใช้งานผิดพลาด ต้นทุนแทบเป็นศูนย์
-  sheet.appendRow([username, saltedHash, sanitizeForSheetCell_(newUserData.fullName || ''), newUserData.role || '', salt, sanitizeForSheetCell_(newUserData.email || '')]);
+  ensureUsersMajorsColumn_(sheet);
+  sheet.appendRow([username, saltedHash, sanitizeForSheetCell_(newUserData.fullName || ''), newUserData.role || '', salt, sanitizeForSheetCell_(newUserData.email || ''), (majors.value || []).join(',')]);
   invalidateStaffEmailsCache_();
 
   logAudit(getSession(token).username, "CREATE_USER", username, "SUCCESS");
@@ -141,7 +184,7 @@ function createUser(token, newUserData) {
 function updateUser(token, updatedData) {
   const session = requireAdmin(token);
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Users");
+  const sheet = getSheet_("Users");
   if (!sheet) return { status: "error", message: "ไม่พบฐานข้อมูลผู้ใช้งาน" };
 
   const data = sheet.getDataRange().getValues();
@@ -157,7 +200,7 @@ function updateUser(token, updatedData) {
   // 🐛 ตรวจทุกอย่างให้ครบ "ก่อน" เขียนอะไรลงชีตเลย — เดิมเช็กรหัสผ่านสั้นเกินเป็นขั้น
   // สุดท้ายหลังเขียนชื่อ/บทบาท/อีเมลไปแล้ว ทำให้ตอบ error กลับไปแต่ข้อมูลบางส่วนถูก
   // บันทึกจริงไปแล้ว (ผู้ดูแลระบบเข้าใจว่าไม่สำเร็จ) และไม่มี audit log ของการเขียนนั้น
-  if (updatedData.password && String(updatedData.password).length < 8) {
+  if (updatedData.password && String(updatedData.password).trim().length < 8) {
     return { status: "error", message: "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร" };
   }
   // role ต้องเป็นค่าที่ระบบรู้จัก หรือเป็นค่าเดิมของบัญชีนี้ (บัญชีเก่ามี role รุ่นเก่าที่
@@ -168,8 +211,15 @@ function updateUser(token, updatedData) {
     return { status: "error", message: "บทบาทไม่ถูกต้อง กรุณาเลือกบทบาทจากรายการ" };
   }
 
-  sheet.getRange(rowIndex, 3).setValue(sanitizeForSheetCell_(updatedData.fullName || ''));
-  sheet.getRange(rowIndex, 4).setValue(newRole);
+  const majors = normalizeMajorsInput_(updatedData.majors);
+  if (majors.error) return { status: "error", message: majors.error };
+
+  if (session.username === String(updatedData.username).trim() && !isAdminRole_(newRole)) {
+    return { status: "error", message: "ไม่สามารถลดสิทธิ์บัญชีของตัวเองได้ (ให้ผู้ดูแลระบบคนอื่นเป็นผู้แก้ไขแทน)" };
+  }
+
+  // ⚡ คอลัมน์ C (ชื่อ) กับ D (บทบาท) ติดกัน — เขียนครั้งเดียว
+  sheet.getRange(rowIndex, 3, 1, 2).setValues([[sanitizeForSheetCell_(updatedData.fullName || ''), newRole]]);
 
   // อีเมลไม่ถูกส่งกลับมาแสดงในฟอร์มแก้ไข (getUsersList ไม่คืนค่านี้ไปให้เว็บเลย)
   // ดังนั้นถ้าช่องว่างเปล่าตอนบันทึก แปลว่า "ไม่ได้ตั้งใจแก้" ไม่ใช่ "ต้องการลบ
@@ -190,7 +240,20 @@ function updateUser(token, updatedData) {
   // 🔒 เปลี่ยนบทบาทหรือรีเซ็ตรหัสผ่าน = token เดิมของบัญชีนี้ต้องใช้ไม่ได้ทันที
   // (ไม่งั้นบทบาทเก่า/รหัสผ่านที่ถูกรีเซ็ตเพราะสงสัยว่ารั่ว ยังใช้งานต่อได้อีก
   // สูงสุด 6 ชั่วโมง) — ดู revokeUserSessions_ ใน Utils.gs
-  if (updatedData.password || newRole !== oldRole) {
+  // 🎓 สาขาที่รับผิดชอบ: เขียนเมื่อหน้าเว็บส่งมา (undefined = ไม่แตะ) และถ้าเปลี่ยนต้องให้ token เดิมหมดอายุด้วย
+  // เพราะสิทธิ์เห็นรายการตามสาขาถูกเก็บไว้ใน session ตอนเข้าสู่ระบบ
+  let majorsChanged = false;
+  if (majors.value !== undefined) {
+    ensureUsersMajorsColumn_(sheet);
+    const oldMajors = parseMajors_(data[rowIndex - 1][6]).join(',');
+    const newMajors = majors.value.join(',');
+    if (oldMajors !== newMajors) {
+      sheet.getRange(rowIndex, 7).setValue(newMajors);
+      majorsChanged = true;
+    }
+  }
+
+  if (updatedData.password || newRole !== oldRole || majorsChanged) {
     revokeUserSessions_(String(updatedData.username).trim());
   }
 
@@ -206,7 +269,7 @@ function deleteUser(token, username) {
     return { status: "error", message: "ไม่สามารถลบบัญชีที่กำลังใช้งานอยู่ได้" };
   }
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Users");
+  const sheet = getSheet_("Users");
   if (!sheet) return { status: "error", message: "ไม่พบฐานข้อมูลผู้ใช้งาน" };
 
   const data = sheet.getDataRange().getValues();
@@ -233,7 +296,7 @@ function deleteUser(token, username) {
 // (ยังว่างไว้ก่อน จะได้ salt ให้อัตโนมัติตอนถูกรีเซ็ตรหัสผ่านครั้งถัดไป)
 // ==========================================
 function setupSaltColumn() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Users");
+  const sheet = getSheet_("Users");
   if (!sheet) throw new Error("ไม่พบแผ่นงาน Users");
 
   const header = sheet.getRange(1, 5).getValue();
@@ -248,7 +311,7 @@ function setupSaltColumn() {
 // สำหรับฟีเจอร์ "เก็บอีเมลผู้ใช้งาน" (ใช้เพิ่มสิทธิ์ Google Drive ภายหลัง)
 // ==========================================
 function setupEmailColumn() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Users");
+  const sheet = getSheet_("Users");
   if (!sheet) throw new Error("ไม่พบแผ่นงาน Users");
 
   const header = sheet.getRange(1, 6).getValue();

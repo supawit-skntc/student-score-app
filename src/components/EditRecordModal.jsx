@@ -1,6 +1,6 @@
 import React from 'react';
 import { Loader2, X, Save } from 'lucide-react';
-import { findOffense } from '../data/offenses';
+import { findOffense, OTHER_OFFENSE_POINTS } from '../data/offenses';
 
 // ฟอนต์ input ต้อง >= 16px เสมอ — ต่ำกว่านี้ iOS Safari จะซูมจอเข้าอัตโนมัติทุก
 // ครั้งที่แตะโฟกัสช่องกรอก (มือถือ) ทำให้รู้สึกว่า UI ไม่พอดีกับจอ
@@ -119,10 +119,31 @@ export default function EditRecordModal({ record, offenses, onChange, onSubmit, 
 
             <div>
               <label className={labelCls}>หัก (คะแนน)</label>
-              <input type="number" name="points" required value={record.points.replace('-', '')} onChange={onChange}
-                className="min-h-12 w-full rounded-[13px] border-[1.5px] border-[#F0CDD4] bg-[#FFF7F8] px-3.5 py-3 text-[17px] font-bold text-bad-fg outline-none transition focus:border-bad-fg" />
-              {findOffense(offenses, record.mainOffense)?.ref && (
-                <p className="mt-1.5 text-[11.5px] text-ink-faint">ค่าเริ่มต้นตาม{findOffense(offenses, record.mainOffense).ref} — แก้ไขได้หากมีเหตุอันควร</p>
+              {record.mainOffense === 'อื่นๆ' ? (
+                <div className="flex flex-wrap gap-2">
+                  {OTHER_OFFENSE_POINTS.map((pt) => {
+                    const active = record.points.replace('-', '') === String(pt);
+                    return (
+                      <button
+                        key={pt}
+                        type="button"
+                        onClick={() => onChange({ target: { name: 'points', value: String(pt) } })}
+                        className={`min-h-12 flex-1 min-w-[64px] rounded-[13px] border-[1.5px] text-[16px] font-bold transition-colors
+                          ${active ? 'border-bad-fg bg-[#FFF7F8] text-bad-fg' : 'border-[#F0CDD4] bg-white text-ink-soft hover:bg-[#FFF7F8]'}`}
+                      >
+                        {pt}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <input type="number" name="points" readOnly disabled value={record.points.replace('-', '')}
+                  className="min-h-12 w-full cursor-not-allowed rounded-[13px] border-[1.5px] border-line bg-line-soft/60 px-3.5 py-3 text-[17px] font-bold text-ink-mute outline-none" />
+              )}
+              {findOffense(offenses, record.mainOffense)?.ref ? (
+                <p className="mt-1.5 text-[11.5px] text-ink-faint">คะแนนกำหนดตายตัวตาม{findOffense(offenses, record.mainOffense).ref} แก้ไขเองไม่ได้</p>
+              ) : record.mainOffense === 'อื่นๆ' && (
+                <p className="mt-1.5 text-[11.5px] text-ink-faint">เลือกคะแนนที่จะตัดตามดุลยพินิจ ({OTHER_OFFENSE_POINTS.join('/')})</p>
               )}
             </div>
           </div>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Camera, Save, Loader2, UserRound, FileWarning } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
-import { CACHED_OFFENSES, fetchOffenses, findOffense } from '../data/offenses';
+import { CACHED_OFFENSES, fetchOffenses, findOffense, OTHER_OFFENSE_POINTS } from '../data/offenses';
 import { resizeImageForOcr, parseOcrCardData, MAJORS_BY_LEVEL } from '../utils/ocr';
 import { todayLocalISO } from '../utils/date';
 
@@ -158,6 +158,12 @@ export default function DeductionForm() {
     let finalOffense = formData.offense;
     if (formData.offense === 'อื่นๆ') {
       finalOffense = `อื่นๆ: ${formData.otherOffense}`;
+    }
+
+    if (formData.offense === 'อื่นๆ' && !OTHER_OFFENSE_POINTS.includes(Number(formData.points))) {
+      Swal.fire('แจ้งเตือน', `กรุณาเลือกคะแนนที่จะตัด (${OTHER_OFFENSE_POINTS.join(', ')})`, 'warning');
+      setIsSubmitting(false);
+      return;
     }
 
     const dataToSubmit = {
@@ -395,10 +401,31 @@ export default function DeductionForm() {
             <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
               <div>
                 <label className={labelCls}>ตัดคะแนน</label>
-                <input type="number" name="points" min="1" value={formData.points} onChange={handleChange} required
-                  className="min-h-12 w-full rounded-[13px] border-[1.5px] border-[#F0CDD4] bg-[#FFF7F8] px-3.5 py-3 text-[17px] font-bold text-bad-fg outline-none transition focus:border-bad-fg" />
-                {selectedOffense?.ref && (
-                  <p className="mt-1.5 text-[11.5px] text-ink-faint">ค่าเริ่มต้นตาม{selectedOffense.ref} — แก้ไขได้หากมีเหตุอันควร</p>
+                {formData.offense === 'อื่นๆ' ? (
+                  <div className="flex flex-wrap gap-2">
+                    {OTHER_OFFENSE_POINTS.map((pt) => {
+                      const active = formData.points === String(pt);
+                      return (
+                        <button
+                          key={pt}
+                          type="button"
+                          onClick={() => setFormData((prev) => ({ ...prev, points: String(pt) }))}
+                          className={`min-h-12 flex-1 min-w-[64px] rounded-[13px] border-[1.5px] text-[16px] font-bold transition-colors
+                            ${active ? 'border-bad-fg bg-[#FFF7F8] text-bad-fg' : 'border-[#F0CDD4] bg-white text-ink-soft hover:bg-[#FFF7F8]'}`}
+                        >
+                          {pt}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <input type="number" name="points" readOnly disabled value={formData.points}
+                    className="min-h-12 w-full cursor-not-allowed rounded-[13px] border-[1.5px] border-line bg-line-soft/60 px-3.5 py-3 text-[17px] font-bold text-ink-mute outline-none" />
+                )}
+                {selectedOffense?.ref ? (
+                  <p className="mt-1.5 text-[11.5px] text-ink-faint">คะแนนกำหนดตายตัวตาม{selectedOffense.ref} แก้ไขเองไม่ได้</p>
+                ) : formData.offense === 'อื่นๆ' && (
+                  <p className="mt-1.5 text-[11.5px] text-ink-faint">เลือกคะแนนที่จะตัดตามดุลยพินิจ ({OTHER_OFFENSE_POINTS.join('/')})</p>
                 )}
               </div>
               <div>

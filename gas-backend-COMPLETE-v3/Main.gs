@@ -27,7 +27,7 @@ function doPost(e) {
         response = generateRecordPdf(token, requestBody.id);
         break;
       case "getRecords":
-        response = getRecords();
+        response = getRecords(token);
         break;
       case "getMyRecords":
         response = getMyRecords(token);
@@ -106,9 +106,17 @@ function doPost(e) {
 
   } catch (err) {
     notifyAdminOfError_(err, { action: action });
+    console.error('doPost error (action: ' + action + '): ' + (err && err.stack ? err.stack : err));
+    // ข้อความที่โค้ดเราโยนเองเป็นภาษาไทย (เช่น "เซสชันหมดอายุ") ส่งให้ผู้ใช้ตามเดิม ส่วนข้อผิดพลาดภายในของ
+    // Apps Script/บริการ Google (ข้อความภาษาอังกฤษ อาจมีชื่อฟังก์ชัน/ไฟล์/รหัสภายใน) ไม่ส่งออกไปให้ผู้เรียก
+    // API เห็น — ยังอยู่ครบใน Executions log และอีเมลแจ้งเตือนผู้ดูแลระบบ
+    const rawMessage = String(err && err.message ? err.message : err);
+    const safeMessage = /[฀-๿]/.test(rawMessage)
+      ? rawMessage
+      : 'เกิดข้อผิดพลาดภายในระบบ กรุณาลองใหม่อีกครั้ง (หากยังเป็นซ้ำ แจ้งผู้ดูแลระบบ)';
     return ContentService.createTextOutput(JSON.stringify({
       status: 'error',
-      message: err.toString().replace('Error: ', '')
+      message: safeMessage
     })).setMimeType(ContentService.MimeType.JSON);
   }
 }

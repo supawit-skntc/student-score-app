@@ -1,8 +1,9 @@
 import React from 'react';
 import { Users } from 'lucide-react';
 import EmptyRow from '../ui/EmptyRow';
+import { maskThaiName } from '../../utils/privacy';
 
-export default function TopStudentsCard({ topStudents, thisAcademicYear, onViewStudent }) {
+export default function TopStudentsCard({ topStudents, thisAcademicYear, onViewStudent, namesRevealed = false }) {
   return (
     <div className="bg-white p-[18px] rounded-[20px] border border-line">
       <div className="flex items-center gap-2.5 mb-4">
@@ -30,7 +31,7 @@ export default function TopStudentsCard({ topStudents, thisAcademicYear, onViewS
                 {i + 1}
               </span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-ink truncate">{s.name}</p>
+                <p className="text-sm font-semibold text-ink truncate">{namesRevealed ? s.name : maskThaiName(s.name)}</p>
                 <p className="text-[11.5px] text-ink-mute">{s.count} รายการ</p>
               </div>
               <span

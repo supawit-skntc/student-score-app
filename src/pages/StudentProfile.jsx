@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Loader2, Search, FileText, UserRound, Inbox, Trash2, ShieldAlert, Plus, ChevronDown, Edit } from 'lucide-react';
+import { Loader2, Search, FileText, Inbox, Trash2, ShieldAlert, Plus, ChevronDown, Edit } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
 import { statusForPoints } from '../data/thresholds';
 import { academicYearOf, currentAcademicYear } from '../data/academicYear';
 import { isAdmin, canViewAllRecords } from '../utils/permissions';
+import ScopeNotice from '../components/ui/ScopeNotice';
 import { parsePoints } from '../utils/points';
 import { escapeHtml } from '../utils/html';
 import ProbationModal from '../components/ProbationModal';
@@ -340,6 +341,8 @@ export default function StudentProfile({ initialStudentId }) {
 
   return (
     <div className="flex flex-col gap-4 max-w-[900px] mx-auto">
+
+      <ScopeNotice user={currentUser} />
 
       {/* --- ค้นหา + ชิปเลือกนักเรียน --- */}
       <div className="bg-white p-4 rounded-[20px] border border-line">

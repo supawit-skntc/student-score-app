@@ -19,7 +19,7 @@
 //   - ใส่ "pending" ให้แถวข้อมูลเก่าที่ยังไม่มีสถานะ (ทางเลือก — ดูคำอธิบายในโค้ด)
 // ==========================================
 function setupSyncColumns() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
+  const sheet = getSheet_("Records");
   if (!sheet) throw new Error("ไม่พบแผ่นงาน Records");
 
   const headerRange = sheet.getRange(1, 15, 1, 3);
@@ -45,7 +45,7 @@ function setupSyncColumns() {
 // ==========================================
 function getSyncQueue(token) {
   requireBotOrAdmin_(token);
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
+  const sheet = getSheet_("Records");
   if (!sheet) return { status: "error", message: "ไม่พบแผ่นงาน Records" };
 
   const data = sheet.getDataRange().getValues();
@@ -63,16 +63,7 @@ function getSyncQueue(token) {
     const status = String(data[i][14] || "").trim().toLowerCase();
     if (status !== "pending") continue;
 
-    let inputDateStr = "";
-    const rawDate = data[i][2];
-    if (rawDate) {
-      const d = new Date(rawDate);
-      if (!isNaN(d.getTime())) {
-        inputDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      } else {
-        inputDateStr = String(rawDate);
-      }
-    }
+    const inputDateStr = data[i][2] ? toIsoDateString_(data[i][2]) : "";
 
     queue.push({
       id: String(data[i][0] || ""),
@@ -93,7 +84,7 @@ function getSyncQueue(token) {
 // ==========================================
 function updateSyncStatus(token, payload) {
   requireBotOrAdmin_(token);
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Records");
+  const sheet = getSheet_("Records");
   if (!sheet) return { status: "error", message: "ไม่พบแผ่นงาน Records" };
 
   // 🔒 รับเฉพาะสถานะที่ระบบรู้จัก (บอทส่งแค่ synced/needs_review/error — ดู
@@ -116,9 +107,12 @@ function updateSyncStatus(token, payload) {
     return { status: "error", message: "ไม่พบรายการที่ id นี้: " + payload.id };
   }
 
-  sheet.getRange(rowIndex, 15).setValue(String(payload.status));
-  sheet.getRange(rowIndex, 16).setValue(new Date().toISOString());
-  sheet.getRange(rowIndex, 17).setValue(sanitizeForSheetCell_(payload.note || ""));
+  // ⚡ คอลัมน์ O, P, Q ติดกัน — เขียนครั้งเดียว (เดิม 3 รอบ ต่อ 1 รายการที่บอทประมวลผล)
+  sheet.getRange(rowIndex, 15, 1, 3).setValues([[
+    String(payload.status),
+    new Date().toISOString(),
+    sanitizeForSheetCell_(payload.note || ""),
+  ]]);
   // 🐛 เดิมจุดนี้ไม่เคยล้างแคชของ getRecords()/getMyRecords() เลย — พอบอทอัปเดต
   // สถานะเสร็จ แผงควบคุม/รายงานฝั่งเว็บอาจยังเห็นสถานะเก่าค้างอยู่ได้นานสุด 30
   // วินาที (อายุแคชที่ตั้งไว้) ก่อนจะรีเฟรชเป็นค่าล่าสุดเอง
@@ -152,7 +146,7 @@ const RPA_STATS_CACHE_TTL_SECONDS = 30;
 
 function logRpaEvent(token, payload) {
   requireBotOrAdmin_(token);
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
   let sheet = ss.getSheetByName("RPA_Log");
 
   if (!sheet) {
@@ -184,9 +178,9 @@ function logRpaEvent(token, payload) {
 // แล้วเรียกได้ — ฝั่งเว็บเลือกเองว่าจะโชว์รายละเอียดนี้ให้ admin เท่านั้นก็ได้
 // ==========================================
 function getRpaStats(token) {
-  requireSession(token);
+  requireAdmin(token); // เดิมผู้ใช้ทุกคนเรียกได้ทั้งที่หน้าเว็บโชว์การ์ดนี้เฉพาะผู้ดูแลระบบ
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
 
   // 🚀 นับคิวรอดำเนินการจาก readActiveRecordRows_() ตัวเดียวกับที่ getRecords()/
   // getMyRecords() ใช้ (มีแคช 30 วินาทีอยู่แล้ว) แทนการอ่านทั้งชีต Records เองอีก

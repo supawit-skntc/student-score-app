@@ -7,7 +7,7 @@ import Pagination from '../components/ui/Pagination';
 
 const PAGE_SIZE = 20;
 
-const emptyForm = { username: '', fullName: '', role: 'ครูผู้สอน', password: '', email: '' };
+const emptyForm = { username: '', fullName: '', role: 'ครูผู้สอน', password: '', email: '', majors: [] };
 
 const inputCls = "w-full rounded-xl border border-slate-300 p-2.75 outline-none transition-all focus:border-brand-500 focus:ring-2 focus:ring-gold-300";
 const labelCls = "mb-1.5 block text-sm font-semibold text-slate-700";
@@ -20,6 +20,8 @@ export default function UserManagement() {
   // จริง (badge ในตาราง + คำอธิบายตอนเลือก role ในฟอร์ม) เลยต้องขอ map เต็มมา
   // แทนที่จะเช็กแค่ roleTier ของตัวเองแบบหน้าอื่น (ดู src/utils/permissions.js)
   const [roleTiers, setRoleTiers] = useState({});
+  // รายชื่อสาขาวิชาที่กำหนดได้ (มาจากเซิร์ฟเวอร์ — MAJOR_NAMES ใน Config.gs)
+  const [majorNames, setMajorNames] = useState([]);
 
   const [modalMode, setModalMode] = useState(null); // null | 'create' | 'edit'
   const [form, setForm] = useState(emptyForm);
@@ -48,6 +50,7 @@ export default function UserManagement() {
       const result = await callAPI('getUsers', {});
       if (result.status === 'success') {
         setUsers(result.data || []);
+        setMajorNames(result.majorNames || []);
         // 🚀 roleTiers มากับคำตอบ getUsers เดียวกันเลย (เดิมยิง getRoleTiers แยกอีก 1
         // รอบทุกครั้งที่เปิดหน้า = อีก ~2 วินาที) — fallback ไปเรียก getRoleTiers เดิม
         // ถ้าคำตอบไม่มี roleTiers (เว็บ deploy ใหม่แล้วแต่ Apps Script ยังเป็นเวอร์ชันเก่า)
@@ -78,7 +81,7 @@ export default function UserManagement() {
     // หมายเหตุ: getUsers ไม่ส่งอีเมลกลับมา (ไม่โชว์ใน UI ตามที่ตั้งใจ) ช่องนี้จึง
     // เริ่มว่างเสมอตอนแก้ไข — เว้นว่างไว้แปลว่า "ไม่แก้อีเมลเดิม" ไม่ใช่ "ลบทิ้ง"
     // (ฝั่งเซิร์ฟเวอร์จะไม่เขียนทับถ้าส่งค่าว่างมา ดู updateUser ใน Service_Users.gs)
-    setForm({ username: u.username, fullName: u.fullName, role: u.role, password: '', email: '' });
+    setForm({ username: u.username, fullName: u.fullName, role: u.role, password: '', email: '', majors: u.majors || [] });
     setChangePassword(false);
     setModalMode('edit');
   };
@@ -87,6 +90,13 @@ export default function UserManagement() {
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
+  };
+
+  const toggleMajor = (name) => {
+    setForm((prev) => ({
+      ...prev,
+      majors: prev.majors.includes(name) ? prev.majors.filter((m) => m !== name) : [...prev.majors, name],
+    }));
   };
 
   const handleSubmit = async (e) => {
@@ -99,7 +109,7 @@ export default function UserManagement() {
         const result = await callAPI('createUser', { data: form });
         if (result.status !== 'success') throw new Error(result.message);
       } else {
-        const payload = { username: form.username, fullName: form.fullName, role: form.role, email: form.email };
+        const payload = { username: form.username, fullName: form.fullName, role: form.role, email: form.email, majors: form.majors };
         if (changePassword) payload.password = form.password;
         // NEW backend action 'updateUser'
         const result = await callAPI('updateUser', { data: payload });
@@ -110,7 +120,7 @@ export default function UserManagement() {
       // อัปเดตรายการในหน้าจอเองเลย ไม่โหลดรายชื่อทั้งหมดซ้ำพร้อมหน้าจอหมุนเต็ม (เดิม
       // ทำ fetchUsers() อีกรอบ = อีก ~2 วินาที) — getUsers คืนแค่ 3 ฟิลด์นี้ (ชื่อผู้ใช้/
       // ชื่อ-นามสกุล/บทบาท) ซึ่งฟอร์มมีครบทุกตัวอยู่แล้ว จึงได้ผลเหมือนโหลดใหม่ทุกประการ
-      const savedUser = { username: form.username.trim(), fullName: form.fullName, role: form.role };
+      const savedUser = { username: form.username.trim(), fullName: form.fullName, role: form.role, majors: form.majors };
       setUsers((prev) => (modalMode === 'create'
         ? [...prev, savedUser]
         : prev.map((x) => (x.username === savedUser.username ? { ...x, ...savedUser } : x))));
@@ -206,6 +216,9 @@ export default function UserManagement() {
                         {seesAll && <Eye size={12} />}
                         {u.role}
                       </span>
+                      {!admin && !seesAll && u.majors && u.majors.length > 0 && (
+                        <p className="mt-1 text-xs text-slate-400">สาขา: {u.majors.join(', ')}</p>
+                      )}
                     </td>
                     <td className="p-4 text-center">
                       <div className="flex items-center justify-center gap-2">
@@ -292,9 +305,33 @@ export default function UserManagement() {
                     ? 'บทบาทนี้เข้าถึงหน้า "จัดการผู้ใช้งาน" และฟังก์ชันของผู้ดูแลระบบได้ทั้งหมด (รวมถึงเห็นทุกรายการในหน้ารายงาน)'
                     : roleTiers[form.role] === 'full'
                     ? 'บทบาทนี้เห็นรายการของทุกคนได้ในหน้ารายงาน (ไม่ใช่แค่ของตัวเอง) แต่ไม่มีสิทธิ์จัดการผู้ใช้งานหรือลบรายการ'
-                    : 'บทบาทนี้เห็นเฉพาะรายการที่ตัวเองบันทึกในหน้ารายงาน ใช้งานได้ที่แผงควบคุม บันทึกตัดคะแนน และรายงาน'}
+                    : 'บทบาทนี้เห็นรายการที่ตัวเองบันทึก และนักเรียนในสาขาที่กำหนดด้านล่าง ใช้งานได้ที่แผงควบคุม บันทึกตัดคะแนน รายงาน และประวัตินักเรียน'}
                 </p>
               </div>
+
+              {roleTiers[form.role] !== 'admin' && roleTiers[form.role] !== 'full' && majorNames.length > 0 && (
+                <div>
+                  <label className={labelCls}>สาขาที่รับผิดชอบ (ไม่บังคับ)</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {majorNames.map((m) => {
+                      const on = form.majors.includes(m);
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => toggleMajor(m)}
+                          className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${on ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'}`}
+                        >
+                          {m}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-1.5 text-xs text-slate-400">
+                    ครูจะเห็นประวัติของนักเรียนในสาขาที่เลือก (ดูอย่างเดียว แก้ไขได้เฉพาะรายการที่ตัวเองบันทึก) — เปลี่ยนแล้วครูต้องออกจากระบบและเข้าใหม่
+                  </p>
+                </div>
+              )}
 
               {modalMode === 'edit' && !changePassword && (
                 <button

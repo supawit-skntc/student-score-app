@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { LayoutDashboard, FileEdit, FileText, LogOut, Users, Plus, UserRound, History } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { isAdmin } from '../utils/permissions';
 import { callAPI } from '../services/api';
 import { currentTermLabel } from '../data/academicYear';
+import { useIdleLogout } from '../hooks/useIdleLogout';
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'แผงควบคุม', icon: LayoutDashboard },
@@ -72,6 +73,25 @@ export default function DashboardLayout({ children, setView, view = 'dashboard' 
       }
     });
   };
+
+  // 🔒 ออกจากระบบอัตโนมัติเมื่อไม่มีการใช้งาน 5 นาที (ดูคำอธิบายเต็มใน useIdleLogout.js) — flag กันเรียกซ้ำ
+  // เผื่อตัวตรวจจับ idle ทำงานอีกรอบก่อน setView('login') จะพาออกจากหน้านี้ไปทัน (DashboardLayout unmount)
+  const idleLoggedOutRef = useRef(false);
+  const handleIdleLogout = useCallback(async () => {
+    if (idleLoggedOutRef.current) return;
+    idleLoggedOutRef.current = true;
+    try { await callAPI('logout', {}); } catch { /* ออกจากระบบฝั่ง client ต่อได้แม้เรียกไม่สำเร็จ */ }
+    localStorage.removeItem('currentUser');
+    Swal.fire({
+      icon: 'info',
+      title: 'ออกจากระบบอัตโนมัติ',
+      text: 'ไม่มีการใช้งานเกิน 5 นาที ระบบออกจากระบบให้เพื่อความปลอดภัย',
+      confirmButtonColor: '#8A2E42',
+      confirmButtonText: 'เข้าสู่ระบบอีกครั้ง',
+    }).then(() => setView('login'));
+  }, [setView]);
+
+  useIdleLogout(true, handleIdleLogout);
 
   const initials = (currentUser.name || '').replace(/^(นาย|นาง|นางสาว)/, '').trim().slice(0, 1) || 'ผ';
   const meta = PAGE_META[view] || PAGE_META.dashboard;

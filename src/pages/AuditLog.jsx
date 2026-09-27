@@ -15,13 +15,14 @@ const ACTION_LABELS = {
   DELETE_USER: 'ลบผู้ใช้งาน',
 };
 
-const THAI_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-
+// รูปแบบวันที่ วัน/เดือน/ปี (พ.ศ.) — เดียวกับที่หน้ารายงาน/ประวัตินักเรียนใช้ (ดู formatThaiDate_ ใน Utils.gs)
 function formatLogTime(iso) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
   const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
-  return `${d.getDate()} ${THAI_MONTHS[d.getMonth()]} ${d.getFullYear() + 543} · ${time}`;
+  return `${dd}/${mm}/${d.getFullYear() + 543} · ${time}`;
 }
 
 export default function AuditLog() {

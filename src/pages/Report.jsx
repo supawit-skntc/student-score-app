@@ -2,12 +2,13 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Loader2, Search, SlidersHorizontal, FileText, Edit, Inbox, UserRound, Trash2, Download, ChevronDown } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
-import { CACHED_OFFENSES, fetchOffenses, findOffense } from '../data/offenses';
+import { CACHED_OFFENSES, fetchOffenses, findOffense, OTHER_OFFENSE_POINTS } from '../data/offenses';
 import { isAdmin, canViewAllRecords } from '../utils/permissions';
-import { academicYearOf, currentAcademicYear } from '../data/academicYear';
+import ScopeNotice from '../components/ui/ScopeNotice';
+import { currentAcademicYear } from '../data/academicYear';
 import { downloadCsv } from '../utils/csv';
 import { todayLocalISO } from '../utils/date';
-import { parsePoints } from '../utils/points';
+import { parsePoints, currentYearStudentTotals } from '../utils/points';
 import { escapeHtml } from '../utils/html';
 import EditRecordModal from '../components/EditRecordModal';
 import Pagination from '../components/ui/Pagination';
@@ -97,15 +98,9 @@ export default function Report({ onViewStudent }) {
   const fetchData = async (user = currentUser, showSpinner = true) => {
     if (showSpinner) setIsLoading(true);
     try {
-      // แอดมิน/กลุ่มเห็นทุกรายการ ใช้ getRecords ตัวเดียวกับหน้าแดชบอร์ด/ประวัติ
-      // นักเรียน (ข้อมูลเหมือนกันเป๊ะสำหรับกลุ่มนี้) แทน getMyRecords — เดิมหน้านี้
-      // เรียก getMyRecords เสมอไม่ว่า role ไหน ทำให้แคชฝั่งเว็บ (api.js) ไม่ถูกใช้
-      // ร่วมกับ Dashboard/StudentProfile เลยเพราะชื่อ action ไม่ตรงกัน สลับหน้าไป
-      // มาต้องเสีย ~2 วิ ซ้ำอีกรอบทั้งที่เพิ่งได้ข้อมูลชุดเดียวกันมา — ส่วนครูทั่วไป
-      // (เห็นเฉพาะรายการตัวเอง) ยังต้องใช้ getMyRecords เหมือนเดิมเพราะข้อมูลที่ได้
-      // ไม่เหมือนกับ getRecords จริงๆ (คนละ scope กัน ห้ามใช้ร่วมกัน)
-      const action = canViewAllRecords(user) ? 'getRecords' : 'getMyRecords';
-      const result = await callAPI(action, {});
+      // ทุกบทบาทเรียก getRecords ตัวเดียวกับแผงควบคุม/ประวัตินักเรียน (แคชฝั่งเว็บใช้ร่วมกันได้ สลับหน้าไม่ต้องรอซ้ำ) —
+      // ขอบเขตข้อมูลตามสิทธิ์ตัดสินที่เซิร์ฟเวอร์ (ครูเห็นของตัวเอง + นักเรียนในสาขาที่รับผิดชอบ)
+      const result = await callAPI('getRecords', {});
       if (result.status === 'success') {
         // กรองรายการที่เพิ่งลบไปในหน้านี้ออกเสมอ (ดู handleDeleteRecord) กันโพลที่ยิง
         // ไปก่อนลบเสร็จแล้วตอบกลับมาทีหลัง เอารายการที่ลบแล้วกลับมาโชว์ค้างอีกรอบ
@@ -178,6 +173,11 @@ export default function Report({ onViewStudent }) {
       finalOffense = `อื่นๆ: ${editingRecord.otherOffense}`;
     }
 
+    if (editingRecord.mainOffense === 'อื่นๆ' && !OTHER_OFFENSE_POINTS.includes(Number(editingRecord.points))) {
+      Swal.fire('แจ้งเตือน', `กรุณาเลือกคะแนนที่จะตัด (${OTHER_OFFENSE_POINTS.join(', ')})`, 'warning');
+      return;
+    }
+
     setIsLoading(true);
     try {
       const updatedData = {
@@ -194,6 +194,10 @@ export default function Report({ onViewStudent }) {
           text: result.message,
           timer: 2000,
           showConfirmButton: false
+        });
+        // PDF ใหม่ถูกสร้างแยกเบื้องหลัง (ไม่ทำให้การกดบันทึกช้า) — ไม่ต้อง await ถ้าล้มเหลวจะมี trigger สร้างซ้ำให้ทุกนาที
+        callAPI('generateRecordPdf', { id: updatedData.id }).catch((err) => {
+          console.error('generateRecordPdf (after edit) error:', err);
         });
         setEditingRecord(null);
         fetchData();
@@ -274,12 +278,9 @@ export default function Report({ onViewStudent }) {
   // จริงครบทุกคนที่บันทึก ให้ดูที่หน้า "ประวัตินักเรียน" หรือ "แผงควบคุม" แทน
   const thisAcademicYear = currentAcademicYear();
   const studentTotals = useMemo(() => {
-    const map = new Map();
-    records.forEach((r) => {
-      if (academicYearOf(r.date) !== thisAcademicYear) return;
-      map.set(r.studentId, (map.get(r.studentId) || 0) + parsePoints(r.points));
-    });
-    return map;
+    const totals = new Map();
+    currentYearStudentTotals(records, thisAcademicYear).forEach((s, studentId) => totals.set(studentId, s.total));
+    return totals;
   }, [records, thisAcademicYear]);
 
   const hasActiveFilters = filterLevel || filterMajor || filterFrom || filterTo || filterHighRisk;
@@ -385,6 +386,8 @@ export default function Report({ onViewStudent }) {
 
   return (
     <div className="flex flex-col gap-4">
+
+      <ScopeNotice user={currentUser} />
 
       {/* --- Search + filters card --- */}
       <div className="bg-white p-4 rounded-[20px] border border-line">
@@ -558,6 +561,7 @@ export default function Report({ onViewStudent }) {
                               <UserRound size={17} />
                             </button>
                           )}
+                          {record.canEdit !== false && (
                           <button
                             onClick={() => openEditModal(record)}
                             disabled={!offensesReady}
@@ -566,6 +570,7 @@ export default function Report({ onViewStudent }) {
                           >
                             <Edit size={17} />
                           </button>
+                          )}
 
                           {record.pdfUrl ? (
                             <a
@@ -640,6 +645,7 @@ export default function Report({ onViewStudent }) {
                         ประวัติ
                       </button>
                     )}
+                    {record.canEdit !== false && (
                     <button
                       onClick={() => openEditModal(record)}
                       disabled={!offensesReady}
@@ -647,6 +653,7 @@ export default function Report({ onViewStudent }) {
                     >
                       แก้ไข
                     </button>
+                    )}
                     {record.pdfUrl ? (
                       <a
                         href={record.pdfUrl}

@@ -19,7 +19,7 @@ function handleLogin(username, password) {
   }
 
   // ดึงข้อมูลจากแท็บ Users (ต้องสร้างแท็บนี้ใน Google Sheets ด้วย)
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Users");
+  const sheet = getSheet_("Users");
 
   if (!sheet) {
     return { status: "error", message: "ไม่พบฐานข้อมูลผู้ใช้งาน (Sheet 'Users')" };
@@ -39,6 +39,9 @@ function handleLogin(username, password) {
 
     const inputHash = hashPassword(String(password).trim(), rowSalt || undefined);
     if (rowPassHash === inputHash) {
+      // 🧂 บัญชีเก่าที่ยังไม่มี salt (เก็บเป็น SHA-256 ล้วน ซึ่งค้นหารหัสผ่านยอดฮิตจากค่าแฮชได้ทันที) — ผู้ใช้เข้าสู่ระบบสำเร็จ
+      // แล้วแปลว่ารู้รหัสผ่านจริง จึงเปลี่ยนเป็นแบบมี salt ให้เงียบๆ ตรงนี้เลย ไม่ต้องรอให้ผู้ดูแลรีเซ็ตรหัสผ่านให้ทีละคน
+      if (!rowSalt) upgradeLegacyPasswordHash_(sheet, i + 1, data[i], String(password).trim());
       const role = String(data[i][3]).trim();
       const user = {
         username: rowUser,
@@ -47,6 +50,7 @@ function handleLogin(username, password) {
         // 🏷️ ดู roleTierOf_ ใน Utils.gs — เว็บใช้ค่านี้เช็กสิทธิ์แทนการเก็บรายชื่อ
         // role เองซ้ำ (src/utils/permissions.js)
         roleTier: roleTierOf_(role),
+        majors: data[i].length > 6 ? parseMajors_(data[i][6]) : [], // คอลัมน์ G: สาขาที่รับผิดชอบ (ว่าง = ไม่มี)
       };
 
       // 🔑 ออก session token ให้ frontend เก็บไว้แนบกับทุก request ถัดไป
@@ -66,15 +70,27 @@ function handleLogin(username, password) {
   return { status: "error", message: "ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง" };
 }
 
+// เขียนแฮชแบบมี salt ทับของเดิม (คอลัมน์ B รหัสผ่าน ... E salt ในการเขียนครั้งเดียว โดยคงชื่อ/บทบาทที่อ่านมาไว้ตามเดิม)
+// พังตรงไหนไม่ให้กระทบการเข้าสู่ระบบ — ครั้งหน้าจะลองอัปเกรดใหม่เอง
+function upgradeLegacyPasswordHash_(sheet, rowIndex, row, password) {
+  try {
+    const salt = generateSalt();
+    sheet.getRange(rowIndex, 2, 1, 4).setValues([[hashPassword(password, salt), row[2], row[3], salt]]);
+    logAudit(String(row[0]).trim(), "UPGRADE_PASSWORD_HASH", String(row[0]).trim(), "SUCCESS");
+  } catch (e) {
+    console.error("อัปเกรดแฮชรหัสผ่านไม่สำเร็จ (ไม่กระทบการเข้าสู่ระบบ): " + e);
+  }
+}
+
 // ==========================================
 // ฟังก์ชันสำหรับแอดมิน: ใช้สร้างค่า Hash เพื่อเอาไปแปะในฐานข้อมูลด้วยมือ (กรณีฉุกเฉิน)
 // ปกติควรใช้หน้า "จัดการผู้ใช้งาน" ในเว็บแอปแทน เพราะเรียก createUser() ให้ครบ
 // ทุกขั้นตอนอัตโนมัติอยู่แล้ว (รวมถึงสร้าง salt ให้ด้วย) ฟังก์ชันนี้เก็บไว้เผื่อกรณี
 // Web App ใช้งานไม่ได้ชั่วคราว — หมายเหตุ: บัญชีที่สร้างด้วยมือผ่านฟังก์ชันนี้จะ
-// ไม่มี salt (คอลัมน์ E ว่าง) ยังใช้งานได้ปกติแต่ปลอดภัยน้อยกว่าเล็กน้อย
+// ไม่มี salt (คอลัมน์ E ว่าง) ยังใช้งานได้ปกติ และระบบจะอัปเกรดเป็นแบบมี salt ให้เองตอนเข้าสู่ระบบครั้งแรก
 // ==========================================
 function generateHashForNewUser() {
-  const newPassword = "1234"; // <--- เปลี่ยนรหัสผ่านที่ต้องการสร้าง Hash ตรงนี้
+  const newPassword = "ใส่รหัสผ่านที่ต้องการตรงนี้ (อย่างน้อย 8 ตัว)"; // <--- แก้ก่อนรัน
   Logger.log("รหัสผ่านต้นฉบับ: " + newPassword);
   Logger.log("นำค่า Hash นี้ไปใส่ในคอลัมน์ Password: " + hashPassword(newPassword));
 }

@@ -1,7 +1,8 @@
-// แปลงวันที่ (Date object จาก Sheets หรือ string ก็ได้) ให้เป็นข้อความไทยอ่านง่าย
-// เช่น "23 ก.ย. 2569" (หรือ "23 กันยายน 2569" ถ้าส่ง {long:true} — เอกสาร PDF
-// ใช้ชื่อเดือนเต็ม ส่วน badge/รายการในเว็บใช้ชื่อย่อ) — ใช้ร่วมกันทุกจุดที่ต้อง
-// แสดงวันที่เป็นภาษาไทย (mapRowToRecord_ ใน Service_Records.gs, getProbationStatus
+// แปลงวันที่ (Date object จาก Sheets หรือ string ก็ได้) ให้เป็นข้อความอ่านง่าย
+// เช่น "23/09/2569" (พ.ศ. คำขอ 27/9/69) หรือ "23 กันยายน 2569" ถ้าส่ง {long:true}
+// — เอกสาร PDF ที่พิมพ์แจกจริงยังใช้ชื่อเดือนเต็มแบบทางการ ส่วนตาราง/รายการอื่น
+// ทั้งหมด (รายงาน ประวัตินักเรียน ทัณฑ์บน CSV) ใช้ตัวเลข วัน/เดือน/ปี — ใช้ร่วมกัน
+// ทุกจุดที่ต้องแสดงวันที่ (mapRowToRecord_ ใน Service_Records.gs, getProbationStatus
 // ใน Service_Probation.gs, generatePDF ใน Service_PDF.gs) กันเขียนอาร์เรย์ชื่อ
 // เดือนไทยซ้ำหลายจุด (เคยมีสำเนาแยกอยู่ใน Service_PDF.gs เอง) และกันบั๊กคลาสสิก
 // ของ Sheets: เขียนสตริงที่หน้าตาเหมือนวันที่ลงเซลล์ (เช่น "2026-09-23") แล้ว
@@ -11,15 +12,22 @@
 // แทนวันที่อ่านง่าย (เจอบั๊กนี้จริงในชีต Probation)
 // อาร์เรย์ชื่อเดือนอยู่ระดับไฟล์ (สร้างครั้งเดียวตอนโหลด) — เดิมสร้างใหม่ทุกครั้ง
 // ที่เรียกฟังก์ชันนี้ ซึ่ง mapRowToRecord_ เรียกต่อ 1 แถว
-const THAI_MONTHS_SHORT_ = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
 const THAI_MONTHS_LONG_ = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
 
 function formatThaiDate_(rawDate, options) {
   if (!rawDate) return "";
   const d = new Date(rawDate);
   if (isNaN(d.getTime())) return String(rawDate);
-  const months = (options && options.long) ? THAI_MONTHS_LONG_ : THAI_MONTHS_SHORT_;
-  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear() + 543}`;
+  const beYear = d.getFullYear() + 543;
+  // 🗓️ รูปแบบวันที่ (คำขอ 27/9/69): ที่แสดงในตาราง/รายการทั่วไป (รายงาน ประวัตินักเรียน ทัณฑ์บน CSV) เปลี่ยนเป็น
+  // ตัวเลข วัน/เดือน/ปี (พ.ศ.) แทนแบบเดิม "24 ก.ย. 2569" — ยกเว้นเอกสาร PDF ที่พิมพ์แจกจริง (options.long) ยังคง
+  // เขียนชื่อเดือนเต็มแบบทางการเหมือนเอกสารราชการทั่วไป (เช่น "24 กันยายน 2569") ไม่เปลี่ยน
+  if (options && options.long) {
+    return `${d.getDate()} ${THAI_MONTHS_LONG_[d.getMonth()]} ${beYear}`;
+  }
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${beYear}`;
 }
 
 // ==========================================
@@ -38,7 +46,7 @@ function formatThaiDate_(rawDate, options) {
 // เขียนแคชชนกัน
 // ==========================================
 const CHUNK_CACHE_CHARS_ = 30000;
-const CHUNK_CACHE_MAX_CHUNKS_ = 20;
+const CHUNK_CACHE_MAX_CHUNKS_ = 60;
 
 function putChunkedCache_(key, str, ttlSeconds) {
   try {
@@ -92,7 +100,7 @@ function logAudit(user, action, targetId, status) {
     // audit — logAudit ถูกเรียกท้ายทุก action เขียนข้อมูล (ลบ/แก้ไข/เพิ่ม) จึงเป็น
     // ต้นทุนที่ต่อท้ายทุกครั้ง ผลเป็นชีตเดียวกันเสมอเพราะ CONFIG.SPREADSHEET_ID
     // ก็มาจาก getActiveSpreadsheet() อยู่แล้ว (ดู Config.gs)
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Audit_Logs");
+    const sheet = getSheet_("Audit_Logs");
     sheet.appendRow([new Date().toISOString(), user, action, targetId, status]);
     // 🔄 ล้างแคช getAuditLogs() ทันที (ดูด้านล่าง) — logAudit ถูกเรียกจากแทบทุก
     // action ที่เขียนข้อมูล เป็นจุดเดียวที่คุมทุกการเขียนลงชีตนี้อยู่แล้ว จึงล้าง
@@ -140,7 +148,7 @@ function getAuditLogs(token) {
     try { return { status: "success", data: JSON.parse(cached) }; } catch (e) { /* อ่านแคชไม่ขึ้น อ่านจากชีตใหม่แทน */ }
   }
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Audit_Logs");
+  const sheet = getSheet_("Audit_Logs");
   if (!sheet) return { status: "success", data: [] }; // ยังไม่เคยมีการบันทึกเหตุการณ์ใดเลย
 
   // 🚀 อ่านเฉพาะ "500 แถวล่าสุด" ตรงๆ จากท้ายชีต (แถวถูกต่อท้ายตามเวลาเสมอด้วย
@@ -250,6 +258,8 @@ function createSession(user) {
   cache.put('session_' + token, JSON.stringify({
     username: user.username,
     role: user.role,
+    name: user.name || '', // ชื่อ-นามสกุลจากชีต Users — ใช้เป็นชื่อครูผู้บันทึกฝั่งเซิร์ฟเวอร์
+    majors: user.majors || [], // สาขาที่ครูผู้สอนรับผิดชอบ (ดูรายการของนักเรียนในสาขาได้)
     iat: Date.now() // เวลาออก token — ใช้เทียบกับเวลายกเลิกสิทธิ์ (revokeUserSessions_)
   }), SESSION_TTL_SECONDS);
   return token;
@@ -274,10 +284,28 @@ function revokeUserSessions_(username) {
 // ⚠️ ต้องเรียก resetRequestMemo_() ที่ต้น doPost เสมอ (ทำแล้วใน Main.gs) กัน
 // ตัวแปรระดับไฟล์ค้างข้ามคำขอถ้า Apps Script นำ runtime เดิมกลับมาใช้ — ไม่งั้น
 // token ที่หมดอายุ/logout ไปแล้วอาจยังผ่านได้จากค่าที่จำไว้ของคำขอก่อนหน้า
-let REQUEST_MEMO_ = { sessions: {}, rateChecked: {} };
+let REQUEST_MEMO_ = { sessions: {}, rateChecked: {}, ss: null, sheets: {} };
 
 function resetRequestMemo_() {
-  REQUEST_MEMO_ = { sessions: {}, rateChecked: {} };
+  REQUEST_MEMO_ = { sessions: {}, rateChecked: {}, ss: null, sheets: {} };
+}
+
+// 📄 จุดเดียวที่เปิดสเปรดชีต/ชีตของระบบ — เดิมทุก handler เขียน
+// SpreadsheetApp.getActiveSpreadsheet().getSheetByName("...") เอง (25+ จุด) และ handler
+// เดียวมักเรียกซ้ำหลายรอบต่อคำขอ (ชีตหลัก + logAudit) ทุกรอบคือการเรียกบริการ Spreadsheet
+// อีกครั้ง — ตอนนี้จำผลไว้ต่อคำขอ (เหมือน session memo ด้านบน; ถูกล้างที่ต้น doPost)
+// ไม่จำผล "ไม่พบชีต" (null) เพราะบางฟังก์ชันสร้างชีตขึ้นมาทีหลัง (เช่น RPA_Log)
+function getSpreadsheet_() {
+  if (!REQUEST_MEMO_.ss) REQUEST_MEMO_.ss = SpreadsheetApp.getActiveSpreadsheet();
+  return REQUEST_MEMO_.ss;
+}
+
+function getSheet_(name) {
+  const memo = REQUEST_MEMO_.sheets;
+  if (memo[name]) return memo[name];
+  const sheet = getSpreadsheet_().getSheetByName(name);
+  if (sheet) memo[name] = sheet;
+  return sheet;
 }
 
 function getSession(token) {
@@ -312,9 +340,13 @@ function requireSession(token) {
 }
 
 // ใช้กับ action ที่ต้องเป็นผู้ดูแลระบบเท่านั้น เช่น การจัดการผู้ใช้งาน
+function isAdminRole_(role) {
+  return ADMIN_ROLES.indexOf(role) !== -1;
+}
+
 function requireAdmin(token) {
   const session = requireSession(token);
-  if (ADMIN_ROLES.indexOf(session.role) === -1) {
+  if (!isAdminRole_(session.role)) {
     throw new Error('คุณไม่มีสิทธิ์เข้าถึงฟังก์ชันนี้');
   }
   return session;
@@ -326,7 +358,7 @@ function requireAdmin(token) {
 // ให้ทั้งแอดมินและกลุ่มเห็นทุกรายการ (ครูปกครอง, ผู้อำนวยการ ฯลฯ) ทำได้
 function requireDisciplineStaff_(token) {
   const session = requireSession(token);
-  if (ADMIN_ROLES.indexOf(session.role) === -1 && FULL_VISIBILITY_ROLES.indexOf(session.role) === -1) {
+  if (!canAccessAllRecords_(session)) {
     throw new Error('คุณไม่มีสิทธิ์เข้าถึงฟังก์ชันนี้');
   }
   return session;
@@ -336,12 +368,12 @@ function requireDisciplineStaff_(token) {
 // ใช้ตรวจตอนสร้าง/แก้ไขผู้ใช้ กันบันทึก role มั่ว (พิมพ์ผิด/ค่าว่าง) ซึ่งจะถูกจัดเป็น
 // ผู้ใช้ทั่วไปเงียบๆ และกันคนที่เรียก API ตรงส่ง role แปลกๆ เข้ามา
 function isKnownRole_(role) {
-  return role === 'ครูผู้สอน' || ADMIN_ROLES.indexOf(role) !== -1 || FULL_VISIBILITY_ROLES.indexOf(role) !== -1;
+  return role === 'ครูผู้สอน' || isAdminRole_(role) || FULL_VISIBILITY_ROLES.indexOf(role) !== -1;
 }
 
 // เห็น/แก้ไขได้ทุกรายการ (แอดมิน + กลุ่มเห็นทุกรายการ) — ตรงกับที่ getMyRecords ใช้
 function canAccessAllRecords_(session) {
-  return ADMIN_ROLES.indexOf(session.role) !== -1 || FULL_VISIBILITY_ROLES.indexOf(session.role) !== -1;
+  return isAdminRole_(session.role) || FULL_VISIBILITY_ROLES.indexOf(session.role) !== -1;
 }
 
 // ใช้กับ action ของบอท RPA (คิวงาน/อัปเดตสถานะ/บันทึก log/แจ้งเตือนล้มเหลว) — เดิมทุก
@@ -352,7 +384,7 @@ function canAccessAllRecords_(session) {
 function requireBotOrAdmin_(token) {
   const session = requireSession(token);
   const isBot = CONFIG.BOT_USERNAMES.indexOf(session.username) !== -1;
-  if (!isBot && ADMIN_ROLES.indexOf(session.role) === -1) {
+  if (!isBot && !isAdminRole_(session.role)) {
     throw new Error('คุณไม่มีสิทธิ์เข้าถึงฟังก์ชันนี้');
   }
   return session;

@@ -28,7 +28,8 @@ function notifyAdminOfError_(err, context) {
     const message = (err && err.message) ? err.message : String(err);
 
     // ข้อผิดพลาดที่เป็นเรื่องปกติของการใช้งาน (ไม่ใช่สัญญาณของบั๊ก) — ข้ามไป ไม่ต้องแจ้งเตือน
-    if (message.indexOf('เซสชันหมดอายุ') !== -1 || message.indexOf('ไม่มีสิทธิ์เข้าถึง') !== -1) return;
+    if (message.indexOf('เซสชันหมดอายุ') !== -1 || message.indexOf('ไม่มีสิทธิ์เข้าถึง') !== -1 ||
+        message.indexOf('คำขอถี่เกินไป') !== -1) return;
 
     const cache = CacheService.getScriptCache();
     if (cache.get(ERROR_ALERT_COOLDOWN_CACHE_KEY)) return; // เพิ่งส่งไปเมื่อครู่ ยังอยู่ในช่วงกันสแปม
@@ -106,7 +107,8 @@ function getOrCreateBackupFolder_() {
 function sheetToCsv_(sheet) {
   const data = sheet.getDataRange().getValues();
   return data.map((row) => row.map((cell) => {
-    const text = (cell === null || cell === undefined) ? '' : String(cell);
+    let text = (cell === null || cell === undefined) ? '' : String(cell);
+    if (/^[=+\-@\t\r]/.test(text) && !/^-?\d+(\.\d+)?$/.test(text)) text = "'" + text;
     return '"' + text.replace(/"/g, '""') + '"';
   }).join(',')).join('\n');
 }
@@ -115,7 +117,7 @@ function sheetToCsv_(sheet) {
 // รายการที่ถูก soft-delete ไปแล้วด้วย (ต่างจาก readActiveRecordRows_ ที่กรองออก)
 // เพราะจุดประสงค์ของ backup คือเก็บสภาพข้อมูลจริงไว้ทั้งหมดเผื่อต้องกู้คืน
 function backupRecordsToArchive_() {
-  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  const ss = getSpreadsheet_();
   const folder = getOrCreateBackupFolder_();
   const timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Bangkok', 'yyyyMMdd_HHmmss');
 

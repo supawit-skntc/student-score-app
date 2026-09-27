@@ -18,7 +18,7 @@ import requests
 
 from app_paths import app_dir
 
-DEFAULT_GAS_API_URL = "https://script.google.com/macros/s/AKfycbzbMCU50DIP7xNtiPlepRCk051cyrk_2aurC9yfTBOsU2QBtxbSdX9Gl1ibFCOKo9Wo/exec"
+DEFAULT_GAS_API_URL = "https://script.google.com/macros/s/AKfycbyuedIk5RTYNNhISCsTSJFiPnWFrC3LbPF0DV6SDQMN5x5XHj7FEc9OayiSHN-EGZ-I/exec"
 
 
 def _load_gas_url() -> str:
@@ -51,6 +51,9 @@ APP_USERNAME = keyring.get_password(SERVICE, "app_username")
 APP_PASSWORD = keyring.get_password(SERVICE, "app_password")
 
 _token = None  # cache ไว้ในหน่วยความจำระหว่างการรันครั้งนี้ ไม่ต้อง login ซ้ำทุกคำขอ
+# ใช้ connection ต่อเนื่อง (keep-alive) ตลอดการรัน — เดิม requests.post() เปิดการเชื่อมต่อ+จับมือ TLS ใหม่ทุกคำขอ
+# ซึ่งบอทยิงหลายครั้งต่อ 1 รายการ (อัปเดตสถานะ + บันทึก log) จึงเสียเวลาไปกับการเชื่อมต่อซ้ำๆ
+_http = requests.Session()
 _log = logging.getLogger("sheets_queue")
 
 # เจอมาแล้วอย่างน้อย 2 ครั้งว่า Google เด้งหน้า HTML (ไม่ใช่ JSON) กลับมาเฉยๆ
@@ -71,13 +74,27 @@ def _warn_and_wait(action: str, attempt: int, error: Exception) -> None:
 
 
 def _post(action: str, **extra) -> dict:
+    """ยิงคำขอไป GAS — ถ้าเซิร์ฟเวอร์ตอบว่าเซสชันหมดอายุ (token เก่า/ถูกยกเลิก เช่น ผู้ดูแลเปลี่ยนรหัสผ่านบัญชีบอท
+    ระหว่างที่บอทกำลังรัน) ล็อกอินใหม่อัตโนมัติแล้วลองอีก 1 รอบ แทนที่จะปล่อยให้ทุกรายการที่เหลือล้มยกแผง"""
+    global _token
+    result = _post_once(action, **extra)
+    if (action != "login" and isinstance(result, dict) and result.get("status") == "error"
+            and "เซสชัน" in str(result.get("message", ""))):
+        _log.warning("เซสชันหมดอายุ — ล็อกอินใหม่แล้วลอง '%s' อีกครั้ง", action)
+        _token = None
+        _ensure_login()
+        result = _post_once(action, **extra)
+    return result
+
+
+def _post_once(action: str, **extra) -> dict:
     payload = {"action": action, "token": _token, **extra}
 
     for attempt in range(1, RETRY_ATTEMPTS + 1):
         is_last_attempt = attempt == RETRY_ATTEMPTS
 
         try:
-            resp = requests.post(
+            resp = _http.post(
                 GAS_API_URL,
                 data=json.dumps(payload),
                 headers={"Content-Type": "text/plain;charset=utf-8"},

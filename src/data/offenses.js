@@ -43,3 +43,7 @@ export async function fetchOffenses() {
 export function findOffense(offenses, label) {
   return offenses.find((o) => o.label === label);
 }
+
+// 🔒 คะแนนที่เลือกได้เมื่อฐานความผิดเป็น "อื่นๆ" — ต้องตรงกับ OTHER_OFFENSE_POINTS ใน Config.gs เป๊ะ
+// (backend ปฏิเสธค่าที่ไม่อยู่ในชุดนี้อยู่แล้ว ชุดนี้ใช้วาดปุ่มเลือกฝั่งเว็บเท่านั้น)
+export const OTHER_OFFENSE_POINTS = [5, 10, 15, 20];

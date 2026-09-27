@@ -1,0 +1,9 @@
+# Netlify: ส่วนหัวความปลอดภัยและแคชของไฟล์ (คัดลอกไปที่ dist อัตโนมัติตอน build)
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+
+# ไฟล์ใน /assets มีรหัสแฮชในชื่อ (เปลี่ยนเนื้อหา = ชื่อใหม่) จึงแคชได้ยาวโดยไม่ต้องถามเซิร์ฟเวอร์ซ้ำทุกครั้ง
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
