@@ -1,5 +1,6 @@
-"""ทดสอบว่าเปลี่ยน/ปิดใช้งาน PIN ต้องกรอก PIN เดิมให้ถูกก่อนเสมอ (ไม่งั้นใครก็ตามที่มาเจอโปรแกรมเปิดค้าง
-อยู่จะปลดล็อกเองได้โดยไม่ต้องรู้ PIN เลย ทำให้ทั้งฟีเจอร์ไม่มีความหมาย — ดู _confirm_current_pin ใน bot_gui.py)
+"""ทดสอบว่าเพิ่ม/ลบ PIN (รองรับหลายชุดแยกชื่อ) ต้องกรอก PIN ที่มีอยู่ชุดใดชุดหนึ่งให้ถูกก่อนเสมอ (ไม่งั้นใครก็ตาม
+ที่มาเจอโปรแกรมเปิดค้างอยู่จะเพิ่ม/ลบ PIN เองได้โดยไม่ต้องรู้ PIN เลย ทำให้ทั้งฟีเจอร์ไม่มีความหมาย — ดู
+_confirm_current_pin ใน bot_gui.py) ยกเว้นการเพิ่ม "ชุดแรก" ตอนยังไม่เคยมี PIN เลย ซึ่งไม่มีอะไรให้ยืนยัน
 รัน: python rpa-bot/tests/test_bot_pin_settings_gate.py
 """
 import os
@@ -51,82 +52,130 @@ messagebox.askyesno = lambda title, text: confirm_queue.pop(0) if confirm_queue 
 app = bot_gui.BotControlPanel()
 app.update()
 
-prompt_calls = []
-prompt_queue = []
+pin_prompt_calls = []
+pin_prompt_queue = []
 
 
-def fake_prompt(title, subtitle, confirm=False):
-    prompt_calls.append((title, confirm))
-    return prompt_queue.pop(0) if prompt_queue else None
+def fake_pin_prompt(title, subtitle, confirm=False):
+    pin_prompt_calls.append((title, confirm))
+    return pin_prompt_queue.pop(0) if pin_prompt_queue else None
 
 
-app._prompt_pin_dialog = fake_prompt
+text_prompt_calls = []
+text_prompt_queue = []
+
+
+def fake_text_prompt(title, subtitle):
+    text_prompt_calls.append((title, subtitle))
+    return text_prompt_queue.pop(0) if text_prompt_queue else None
+
+
+app._prompt_pin_dialog = fake_pin_prompt
+app._prompt_text_dialog = fake_text_prompt
 
 
 def reset():
-    prompt_calls.clear()
-    prompt_queue.clear()
+    pin_prompt_calls.clear()
+    pin_prompt_queue.clear()
+    text_prompt_calls.clear()
+    text_prompt_queue.clear()
     info_msgs.clear()
     warn_msgs.clear()
     error_msgs.clear()
     confirm_queue.clear()
 
 
-# ---------------------------------------------------------------- A) ยังไม่เคยตั้ง PIN — ตั้งครั้งแรกไม่ต้องยืนยันของเดิม
+# ---------------------------------------------------------------- A) ยังไม่เคยตั้ง PIN เลย — เพิ่มชุดแรกไม่ต้องยืนยันของเดิม
 reset()
-prompt_queue.append("2468")  # ตั้งใหม่ (confirm=True เรียกครั้งเดียว ไม่มีขั้นยืนยันของเดิมมาก่อน)
-app._on_set_pin()
-t("first-time set: only ONE dialog shown (no 'confirm current PIN' step)", len(prompt_calls) == 1)
-t("first-time set: the one dialog IS the confirm=True new-pin dialog", prompt_calls[0][1] is True)
-t("first-time set: pin actually saved", run_lock.has_pin() is True and run_lock.verify_pin("2468") is True)
+text_prompt_queue.append("ครูเอ")
+pin_prompt_queue.append("2468")
+app._on_add_pin()
+t("first pin: no current-pin confirmation step (nothing to confirm yet)", len(pin_prompt_calls) == 1 and pin_prompt_calls[0][1] is True)
+t("first pin: name prompt shown once", len(text_prompt_calls) == 1)
+t("first pin: saved under the name given, and verifies", run_lock.list_pins() == ["ครูเอ"] and run_lock.verify_pin("2468") == "ครูเอ")
 
-# ---------------------------------------------------------------- B) เปลี่ยน PIN โดยไม่รู้ PIN เดิม -> ต้องถูกปฏิเสธ ค่าเดิมไม่เปลี่ยน
+# ---------------------------------------------------------------- B) เพิ่ม PIN ชุดที่สอง โดยไม่รู้ PIN ที่มีอยู่ -> ถูกปฏิเสธ
 reset()
-prompt_queue.append("0000")  # กรอก "PIN เดิม" ผิด
-app._on_set_pin()
-t("change pin with WRONG current pin: aborted (only the current-pin dialog shown)", len(prompt_calls) == 1 and prompt_calls[0][1] is False)
-t("change pin with wrong current pin: error shown", len(error_msgs) == 1)
-t("change pin with wrong current pin: old pin still works", run_lock.verify_pin("2468") is True)
+pin_prompt_queue.append("0000")  # กรอก PIN เดิมผิด
+app._on_add_pin()
+t("add 2nd pin, WRONG current pin: aborted after only the current-pin dialog", len(pin_prompt_calls) == 1 and pin_prompt_calls[0][1] is False)
+t("add 2nd pin, wrong current pin: never reaches the name prompt", len(text_prompt_calls) == 0)
+t("add 2nd pin, wrong current pin: error shown", len(error_msgs) == 1)
+t("add 2nd pin, wrong current pin: still only the first pin exists", run_lock.list_pins() == ["ครูเอ"])
 
-# ยกเลิกตอนถูกถามหา PIN เดิม (กด "ยกเลิก") -> ก็ต้องไม่เปลี่ยนเช่นกัน และไม่ถูกถามหา PIN ใหม่เลย
+# ยกเลิกตอนถูกถามหา PIN เดิม (กด "ยกเลิก") -> ไม่ถูกถามชื่อ/PIN ใหม่เลย
 reset()
-prompt_queue.append(None)
-app._on_set_pin()
-t("cancelling the current-pin prompt aborts before asking for a new pin", len(prompt_calls) == 1)
-t("cancelling: old pin still works", run_lock.verify_pin("2468") is True)
+pin_prompt_queue.append(None)
+app._on_add_pin()
+t("cancelling the current-pin prompt aborts before asking for a name", len(pin_prompt_calls) == 1 and len(text_prompt_calls) == 0)
+t("cancelling: still only the first pin exists", run_lock.list_pins() == ["ครูเอ"])
 
-# ---------------------------------------------------------------- C) เปลี่ยน PIN โดยรู้ PIN เดิมถูกต้อง -> สำเร็จ
+# ---------------------------------------------------------------- C) เพิ่ม PIN ชุดที่สอง โดยรู้ PIN ที่มีอยู่ถูกต้อง -> สำเร็จ
 reset()
-prompt_queue.append("2468")  # PIN เดิม (ถูก)
-prompt_queue.append("13579")  # PIN ใหม่
-app._on_set_pin()
-t("change pin with correct current pin: prompted twice (current, then new)", len(prompt_calls) == 2)
-t("change pin with correct current pin: first prompt is NOT confirm=True (single current-pin entry)", prompt_calls[0][1] is False)
-t("change pin with correct current pin: second prompt IS confirm=True (new pin, entered twice)", prompt_calls[1][1] is True)
-t("change pin with correct current pin: new pin now active", run_lock.verify_pin("13579") is True)
-t("change pin with correct current pin: old pin no longer works", run_lock.verify_pin("2468") is False)
+pin_prompt_queue.append("2468")  # PIN ที่มีอยู่ (ถูก)
+text_prompt_queue.append("หัวหน้าแผนก")
+pin_prompt_queue.append("13579")  # PIN ใหม่ของชุดที่สอง
+app._on_add_pin()
+t("add 2nd pin, correct current pin: prompted for current-pin then new-pin (2 pin dialogs)", len(pin_prompt_calls) == 2)
+t("add 2nd pin: first pin dialog is NOT confirm=True (single current-pin entry)", pin_prompt_calls[0][1] is False)
+t("add 2nd pin: second pin dialog IS confirm=True (new pin, entered twice)", pin_prompt_calls[1][1] is True)
+t("add 2nd pin: both owners now listed", run_lock.list_pins() == ["ครูเอ", "หัวหน้าแผนก"])
+t("add 2nd pin: first owner's pin still works", run_lock.verify_pin("2468") == "ครูเอ")
+t("add 2nd pin: second owner's pin verifies to their own name", run_lock.verify_pin("13579") == "หัวหน้าแผนก")
 
-# ---------------------------------------------------------------- D) ปิดใช้งาน PIN โดยไม่รู้ PIN เดิม -> ถูกปฏิเสธ ยังเปิดอยู่
+# ---------------------------------------------------------------- D) เพิ่ม PIN แต่ยกเลิกตอนกรอกชื่อ -> ไม่ถูกถาม PIN ใหม่เลย
 reset()
-prompt_queue.append("wrong-pin")
-app._on_clear_pin()
-t("clear pin with wrong current pin: rejected", run_lock.has_pin() is True)
-t("clear pin with wrong current pin: error shown", len(error_msgs) == 1)
+pin_prompt_queue.append("2468")
+text_prompt_queue.append(None)  # กด "ยกเลิก" ตอนกรอกชื่อ
+app._on_add_pin()
+t("cancelling the name prompt aborts before asking for a new pin", len(pin_prompt_calls) == 1)
+t("cancelling the name prompt: no new entry added", run_lock.list_pins() == ["ครูเอ", "หัวหน้าแผนก"])
 
-# ---------------------------------------------------------------- E) ปิดใช้งาน PIN ด้วย PIN เดิมที่ถูกต้อง + ยืนยัน "ใช่"
+# กรอกชื่อว่างเปล่า -> ถูกปฏิเสธ ไม่ถามหา PIN ใหม่
 reset()
-prompt_queue.append("13579")
+pin_prompt_queue.append("2468")
+text_prompt_queue.append("   ")
+app._on_add_pin()
+t("blank name: rejected with a warning, no new-pin prompt", len(warn_msgs) == 1 and len(pin_prompt_calls) == 1)
+t("blank name: no new entry added", run_lock.list_pins() == ["ครูเอ", "หัวหน้าแผนก"])
+
+# ชื่อซ้ำกับที่มีอยู่ -> run_lock.add_pin ปฏิเสธเอง (แสดงคำเตือน ไม่ทับของเดิม)
+reset()
+pin_prompt_queue.append("2468")
+text_prompt_queue.append("ครูเอ")
+pin_prompt_queue.append("99999")
+app._on_add_pin()
+t("duplicate name: rejected with a warning", len(warn_msgs) == 1)
+t("duplicate name: original pin for that name still works, not overwritten", run_lock.verify_pin("2468") == "ครูเอ")
+
+# ---------------------------------------------------------------- E) ลบ PIN โดยไม่รู้ PIN ที่มีอยู่ -> ถูกปฏิเสธ ยังอยู่ครบ
+reset()
+pin_prompt_queue.append("wrong-pin")
+app._on_remove_pin("หัวหน้าแผนก")
+t("remove pin, wrong current pin: rejected", run_lock.list_pins() == ["ครูเอ", "หัวหน้าแผนก"])
+t("remove pin, wrong current pin: error shown", len(error_msgs) == 1)
+
+# ---------------------------------------------------------------- F) ลบ PIN ด้วย PIN ที่มีอยู่ถูกต้อง + ยืนยัน "ใช่"
+reset()
+pin_prompt_queue.append("2468")
 confirm_queue.append(True)
-app._on_clear_pin()
-t("clear pin with correct current pin + confirm yes: pin removed", run_lock.has_pin() is False)
+app._on_remove_pin("หัวหน้าแผนก")
+t('remove pin with correct current pin + confirm yes: "หัวหน้าแผนก" removed, "ครูเอ" stays', run_lock.list_pins() == ["ครูเอ"])
+t("removed owner's pin no longer verifies", run_lock.verify_pin("13579") is None)
 
-# ---------------------------------------------------------------- F) ตั้ง PIN ใหม่อีกครั้งเพื่อทดสอบ "ปิดใช้งาน" แบบกด "ไม่ยืนยัน"
+# ---------------------------------------------------------------- G) ลบ PIN ที่เหลืออยู่ชุดสุดท้าย แต่กด "ไม่ยืนยัน" ตอนถามซ้ำ
 reset()
-run_lock.set_pin("24680")
-prompt_queue.append("24680")
-confirm_queue.append(False)  # กด "ยกเลิก" ตอนถามยืนยันปิดใช้งาน
-app._on_clear_pin()
-t("clear pin: correct pin but declines the final yes/no -> PIN stays active", run_lock.has_pin() is True)
+pin_prompt_queue.append("2468")
+confirm_queue.append(False)  # กด "ยกเลิก" ตอนถามยืนยันลบ
+app._on_remove_pin("ครูเอ")
+t("remove: correct pin but declines the final yes/no -> entry stays", run_lock.list_pins() == ["ครูเอ"])
+
+# ลบชุดสุดท้ายจริง -> has_pin() กลับเป็น False (ชุดถัดไปที่เพิ่มจะไม่ต้องยืนยันของเดิมอีก)
+reset()
+pin_prompt_queue.append("2468")
+confirm_queue.append(True)
+app._on_remove_pin("ครูเอ")
+t("removing the last remaining pin clears has_pin() back to False", run_lock.has_pin() is False)
 
 app.destroy()
 print(f"\n{ok} passed, {fail} failed")

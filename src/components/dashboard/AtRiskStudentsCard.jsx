@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldAlert, Copy, Check } from 'lucide-react';
+import { ShieldAlert, Copy, Check, Eye, EyeOff } from 'lucide-react';
 import { maskThaiName } from '../../utils/privacy';
 
 const SCORE_BOX_CLS = {
@@ -30,18 +30,29 @@ const FILTER_OPTIONS = [
 // เลย ไม่ต้องไปค้นหานักเรียนซ้ำที่หน้า "ประวัตินักเรียน" อีกรอบ (เดิมต้องทำแบบ
 // นั้น ผู้ใช้งานจริงบอกว่าหาปุ่มไม่เจอ + ขั้นตอนเยอะเกินไป) เพราะการ์ดนี้ก็คือ
 // รายชื่อที่ "ต้องดำเนินการ" อยู่แล้วตามคำจำกัดความของมันเอง
-export default function AtRiskStudentsCard({ students, thisAcademicYear, onViewStudent, probationByStudent = {}, onAddProbation, namesRevealed = false }) {
+export default function AtRiskStudentsCard({ students, thisAcademicYear, onViewStudent, probationByStudent = {}, onAddProbation }) {
   const [filterKey, setFilterKey] = useState('all');
   const [copied, setCopied] = useState(false);
+  // ปิดบังชื่อทีละแถวแทนสวิตช์รวมหน้าเดียว (ฟีดแบ็กผู้ใช้ 28/9/69) — ซ่อนไว้ก่อนเสมอทุกครั้งที่
+  // เปิดหน้านี้ใหม่ (ไม่จำข้ามหน้า) เหมือนตัวเดิม แค่ย้ายปุ่มดวงตาไปติดท้ายชื่อแต่ละคนแทน
+  const [revealedIds, setRevealedIds] = useState(() => new Set());
+  const toggleReveal = (studentId) => {
+    setRevealedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(studentId)) next.delete(studentId); else next.add(studentId);
+      return next;
+    });
+  };
 
   if (students.length === 0) return null;
 
   const activeFilter = FILTER_OPTIONS.find((f) => f.key === filterKey);
   const filtered = students.filter((s) => s.total >= activeFilter.min);
 
-  // คัดลอกรายชื่อ (พร้อมคะแนน) ไปวางต่อในเอกสารสรุปรายชื่อเข้าค่ายได้เลย
+  // คัดลอกรายชื่อ (พร้อมคะแนน) ไปวางต่อในเอกสารสรุปรายชื่อเข้าค่ายได้เลย — คัดลอกชื่อจริงเสมอไม่
+  // ว่าแถวไหนจะเปิดเผยอยู่บนจอหรือไม่ จึงต้องถามยืนยันทุกครั้งก่อนคัดลอกจริง
   const handleCopy = async () => {
-    if (!namesRevealed && !window.confirm('รายชื่อบนจอยังซ่อนอยู่ — คัดลอกชื่อจริงทั้งหมดไปยังคลิปบอร์ดหรือไม่?')) return;
+    if (!window.confirm('คัดลอกชื่อจริงของนักเรียนทั้งหมดในรายการนี้ไปยังคลิปบอร์ดหรือไม่?')) return;
     const text = filtered.map((s) => `${s.name} (${s.total} คะแนน)`).join('\n');
     try {
       await navigator.clipboard.writeText(text);
@@ -105,7 +116,17 @@ export default function AtRiskStudentsCard({ students, thisAcademicYear, onViewS
               </div>
               <div className="flex-1 min-w-[150px]">
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <p className="text-[14.5px] font-semibold text-ink truncate">{namesRevealed ? s.name : maskThaiName(s.name)}</p>
+                  <p className="text-[14.5px] font-semibold text-ink truncate">
+                    {revealedIds.has(s.studentId) ? s.name : maskThaiName(s.name)}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => toggleReveal(s.studentId)}
+                    className="shrink-0 rounded-md p-1 text-ink-faint hover:bg-line-soft hover:text-ink-soft transition-colors"
+                    title={revealedIds.has(s.studentId) ? 'ซ่อนชื่อ' : 'แสดงชื่อ'}
+                  >
+                    {revealedIds.has(s.studentId) ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
                   {probationByStudent[s.studentId]?.length > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-ink/[0.08] px-2 py-0.5 text-[10.5px] font-semibold text-ink-soft shrink-0">
                       <ShieldAlert size={10} /> เคยทำทัณฑ์บนแล้ว

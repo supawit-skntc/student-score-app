@@ -365,6 +365,32 @@ if (require.main === module) {
     t('createUser rejects unknown major', call(a4, { action: 'createUser', token: A4, data: { username: 'badteach', fullName: 'x', role: 'ครูผู้สอน', password: 'GoodPass123', majors: ['ไม่มีจริง'] } }).status === 'error');
   }
 
+  // ---- N2. กลุ่มสาขา ปวช./ปวส. เดียวกัน (คำขอ 28/9/69) — ครูรับผิดชอบสาขาหนึ่งต้องเห็นนักเรียนที่ใช้ชื่อ
+  // หลักสูตรของอีกระดับด้วย เพราะเป็นสาขาเดียวกันจริงในทางปฏิบัติ (ดู MAJOR_GROUPS/majorGroupOf_ ใน Config.gs)
+  {
+    const e5 = fixture(); const a5 = build(e5);
+    const A5 = login(a5, 'admin', 'AdminPass1').token;
+    const spin5 = (ms) => { const s0 = Date.now(); while (Date.now() - s0 < ms); };
+    const upd5 = (username, majors) => { const r0 = call(a5, { action: 'updateUser', token: A5, data: { username, fullName: e5.sheets.Users.rows.find((r) => r[0] === username)[2], role: 'ครูผู้สอน', majors } }); spin5(3); return r0; };
+    upd5('teacher1', ['ช่างยนต์']);
+    upd5('teacher2', ['การตลาด']);
+    const T1z = login(a5, 'teacher1', 'TeacherPass1').token;
+    const T2z = login(a5, 'teacher2', 'TeacherPass2').token;
+    // แอดมินบันทึกแทนทุกรายการ กันไม่ให้ "เจ้าของรายการ" ไปบังผลของการเทียบสาขา
+    const add5 = (sid, major) => call(a5, { action: 'addRecord', token: A5, data: validRecord({ studentId: sid, fieldOfStudy: major, clientRequestId: crypto.randomUUID() }) });
+    add5('69219000201', 'เทคนิคเครื่องกล'); // ปวส. เทียบเท่า "ช่างยนต์"
+    add5('69219000202', 'การตลาด');
+    add5('69219000203', 'การจัดการธุรกิจค้าปลีก'); // ปวส.-only เทียบเท่า "การตลาด"
+    add5('69219000204', 'เทคโนโลยีสารสนเทศ'); // ไม่เกี่ยวกับใครเลย
+    const ids5 = (tok) => call(a5, { action: 'getRecords', token: tok }).data.map((x) => x.studentId).sort();
+    t('teacher assigned "ช่างยนต์" also sees ปวส. "เทคนิคเครื่องกล" students', ids5(T1z).indexOf('69219000201') !== -1, ids5(T1z).join());
+    t('teacher assigned "การตลาด" sees both "การตลาด" and ปวส.-only "การจัดการธุรกิจค้าปลีก"',
+      ids5(T2z).indexOf('69219000202') !== -1 && ids5(T2z).indexOf('69219000203') !== -1, ids5(T2z).join());
+    t('unrelated major stays hidden from both', ids5(T1z).indexOf('69219000204') === -1 && ids5(T2z).indexOf('69219000204') === -1);
+    t('MAJOR_NAMES picklist collapsed to 14 canonical groups (was 21 raw names)',
+      call(a5, { action: 'getUsers', token: A5 }).majorNames.length === 14);
+  }
+
   // ---- M. คะแนนแก้ไขเองไม่ได้ (คำขอ 27/9/69) + รูปแบบวันที่ วัน/เดือน/ปี
   {
     const e5 = fixture(); const a5 = build(e5);

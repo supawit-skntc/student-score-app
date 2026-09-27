@@ -6,7 +6,6 @@ import { statusForPoints } from '../data/thresholds';
 import { currentAcademicYear, currentTermLabel } from '../data/academicYear';
 import { isAdmin, canViewAllRecords } from '../utils/permissions';
 import ScopeNotice from '../components/ui/ScopeNotice';
-import PrivacyToggle from '../components/ui/PrivacyToggle';
 import { parsePoints, currentYearStudentTotals } from '../utils/points';
 import SummaryCard from '../components/ui/SummaryCard';
 import AtRiskStudentsCard from '../components/dashboard/AtRiskStudentsCard';
@@ -34,8 +33,9 @@ export default function Dashboard({ onViewStudent }) {
   const [probationByStudent, setProbationByStudent] = useState({});
   const [probationTarget, setProbationTarget] = useState(null); // { studentId, studentName } | null
   // ชื่อนักเรียนในการ์ด "ถึงเกณฑ์ต้องดำเนินการ" และ "คะแนนสะสมสูงสุด" ซ่อนไว้ก่อนเสมอทุกครั้งที่เปิดหน้านี้
-  // (ข้อมูลอ่อนไหว เห็นได้ทันทีโดยไม่ต้องค้นหา ต่างจากหน้ารายงาน/ประวัตินักเรียนที่ต้องพิมพ์ค้นหาก่อน)
-  const [namesRevealed, setNamesRevealed] = useState(false);
+  // (ข้อมูลอ่อนไหว เห็นได้ทันทีโดยไม่ต้องค้นหา ต่างจากหน้ารายงาน/ประวัตินักเรียนที่ต้องพิมพ์ค้นหาก่อน) —
+  // ปิดบัง/แสดงทีละคนด้วยไอคอนรูปตาท้ายชื่อ (จัดการ state ในตัวการ์ดเอง ดู AtRiskStudentsCard/
+  // TopStudentsCard) แทนสวิตช์รวมทั้งหน้าตัวเดียว (ฟีดแบ็กผู้ใช้ 28/9/69: ใช้งานง่ายกว่า)
 
   // จำนวนนักเรียนที่มีประวัติทัณฑ์บนทั้งหมด (ไม่ผูกกับคะแนนสะสม/ปีการศึกษา) —
   // ใช้กับการ์ดสรุปด้านล่าง โชว์เป็นตัวเลขรวมง่ายๆ กดแล้วพาไปหน้า "ประวัตินักเรียน"
@@ -231,15 +231,12 @@ export default function Dashboard({ onViewStudent }) {
         />
       </div>
 
-      <PrivacyToggle revealed={namesRevealed} onToggle={() => setNamesRevealed((v) => !v)} />
-
       <AtRiskStudentsCard
         students={stats.atRiskStudents}
         thisAcademicYear={stats.thisAcademicYear}
         onViewStudent={onViewStudent}
         probationByStudent={probationByStudent}
         onAddProbation={canManageProbation ? (studentId, studentName) => setProbationTarget({ studentId, studentName }) : undefined}
-        namesRevealed={namesRevealed}
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-[18px]">
@@ -248,7 +245,6 @@ export default function Dashboard({ onViewStudent }) {
           topStudents={stats.topStudents}
           thisAcademicYear={stats.thisAcademicYear}
           onViewStudent={onViewStudent}
-          namesRevealed={namesRevealed}
         />
       </div>
 

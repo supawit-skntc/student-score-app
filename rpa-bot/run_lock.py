@@ -1,42 +1,88 @@
 """
-run_lock.py — PIN ยืนยันตัวตนก่อน "รันจริง" ด้วยมือ (ไม่บังคับ)
+run_lock.py — PIN ยืนยันตัวตนก่อน "รันจริง" ด้วยมือ (ไม่บังคับ, ตั้งได้หลายชุด)
 
 คอมเมนต์จากอาจารย์ผู้เชี่ยวชาญ (27/9/69): กังวลว่าถ้ามีใครเดินมาเจอโปรแกรมที่เปิดค้างอยู่บนเครื่องที่
 ล็อกอิน Windows ไว้แล้ว (เช่น ลืมล็อกหน้าจอ) จะกดปุ่ม "รันจริง" ได้ทันทีโดยไม่ได้รับอนุญาต — โมดูลนี้เพิ่ม
-เลเยอร์กันอีกชั้นเฉพาะจุดนั้น: ถ้าตั้ง PIN ไว้ ต้องกรอก PIN ให้ถูกก่อนกด "รันจริง" ด้วยมือทุกครั้ง
+เลเยอร์กันอีกชั้นเฉพาะจุดนั้น: ถ้าตั้ง PIN ไว้อย่างน้อย 1 ชุด ต้องกรอก PIN ที่ตรงชุดใดชุดหนึ่งให้ถูกก่อนกด
+"รันจริง" ด้วยมือทุกครั้ง — จุดประสงค์คือยกระดับจาก "ใครก็คลิกรันได้ทันที" เป็น "ต้องรู้ความลับ (PIN) ก่อน"
+ไม่ได้อ้างว่ากันได้ 100% (ยังไม่ใช่การยืนยันตัวตนแบบมีบัญชีแยกรายคน) แต่ปิดช่องโหว่ที่อาจารย์กังวลได้ตรงจุด
 
-ไม่เกี่ยวกับบัญชี EDMS/RMS เลย (คนละคีย์ในที่เก็บเดียวกัน) และไม่บังคับตั้ง — ถ้าไม่ตั้ง ปุ่ม "รันจริง"
-ทำงานเหมือนเดิมทุกประการ (ดู bot_gui.py) และไม่กระทบการรันอัตโนมัติตามเวลา (schedule_logic.py) เพราะรอบนั้น
+คำถามผู้ใช้ (28/9/69): "ถ้าคนรับผิดชอบหลักไม่อยู่ คนอื่น (เช่นหัวหน้าแผนก) จะรันแทนได้ไหม" — เดิมมี PIN
+ได้ชุดเดียว ทำให้ทุกคนต้องรู้ PIN เดียวกัน (แชร์กัน = ไม่รู้ว่าใครรันจริง) ตอนนี้ตั้งได้หลายชุด แยกชื่อ
+เจ้าของ ใครใช้ PIN ของตัวเองรันก็ได้โดยไม่ต้องรู้ PIN ของคนอื่น — verify_pin() คืน "ชื่อ" ของ PIN ที่ตรง
+กลับไป เอาไปบันทึกลงคอนโซล/ล็อกได้ว่าใครเป็นคนยืนยันรันรอบนั้น (ดู bot_gui.py._run_bot)
+
+ไม่เกี่ยวกับบัญชี EDMS/RMS เลย (คนละคีย์ในที่เก็บเดียวกัน) และไม่บังคับตั้ง — ถ้าไม่ตั้งเลยสักชุด ปุ่ม
+"รันจริง" ทำงานเหมือนเดิมทุกประการ และไม่กระทบการรันอัตโนมัติตามเวลา (schedule_logic.py) เพราะรอบนั้น
 ผู้ใช้ยืนยันไว้ล่วงหน้าแล้วตอนเปิดสวิตช์ "รันจริงอัตโนมัติตามเวลา" — ให้หยุดถามซ้ำทุกรอบจะทำให้ฟีเจอร์
 รันอัตโนมัติใช้งานไม่ได้จริง (ไม่มีคนนั่งรอกรอก PIN ตอนเที่ยงคืน)
 
-เก็บเป็นแฮช PBKDF2-SHA256 + salt สุ่มต่อเครื่องใน Windows Credential Manager (ที่เดียวกับรหัสผ่านอื่นของบอท)
+เก็บเป็นแฮช PBKDF2-SHA256 + salt สุ่มต่อ "ชุด" ใน Windows Credential Manager (ที่เดียวกับรหัสผ่านอื่นของบอท)
 ไม่เก็บ PIN เป็นข้อความล้วน และเทียบผลแฮชแบบเวลาคงที่ (hmac.compare_digest) กันการโจมตีแบบ timing attack
 """
 import hashlib
 import hmac
+import json
 import os
 
 import keyring
 
 SERVICE = "rms-rpa-bot"
-PIN_HASH_KEY = "run_pin_hash"  # เก็บเป็นข้อความเดียว "<salt เป็น hex>:<แฮชเป็น hex>"
+PINS_KEY = "run_pins_v2"  # เก็บ JSON: [{"name":.., "salt":"hex", "hash":"hex"}, ...]
+LEGACY_PIN_KEY = "run_pin_hash"  # รุ่นก่อนรองรับหลายชุด ("<salt hex>:<hash hex>") — ย้ายอัตโนมัติครั้งเดียว
+LEGACY_PIN_NAME = "PIN เดิม"
 PBKDF2_ITERATIONS = 200_000
 MIN_PIN_LENGTH = 4
 MAX_PIN_LENGTH = 20
+MAX_NAME_LENGTH = 40
+MAX_PINS = 10  # กันเผลอเพิ่มไม่จำกัด — แผนกเล็กๆ ไม่น่าจะต้องมีเกินนี้จริง
 
 
 def _hash_pin(pin: str, salt: bytes) -> bytes:
     return hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"), salt, PBKDF2_ITERATIONS)
 
 
-def has_pin() -> bool:
-    """True ถ้าตั้ง PIN ไว้แล้ว — อ่านพังไม่ควรทำให้ทั้งโปรแกรมพัง จึงถือว่า "ยังไม่ได้ตั้ง" (ปลอดภัยน้อยกว่า
-    แต่ไม่ล็อกผู้ใช้ออกจากโปรแกรมตัวเองเพราะ Credential Manager อ่านชั่วคราวไม่ได้)"""
+def _save_pins(pins: list) -> None:
+    keyring.set_password(SERVICE, PINS_KEY, json.dumps(pins, ensure_ascii=False))
+
+
+def _load_pins() -> list:
+    """อ่านรายการ PIN ทั้งหมด — ย้าย PIN รุ่นเดียวเดิม (ถ้ามีและยังไม่เคยย้าย) มาเป็นรายการแรกให้อัตโนมัติ
+    อ่าน/เขียนพังไม่ควรทำให้ทั้งโปรแกรมพัง จึงคืนลิสต์ว่างเมื่อผิดพลาด (ปลอดภัยน้อยกว่าแต่ไม่ล็อกผู้ใช้
+    ออกจากโปรแกรมตัวเองเพราะ Credential Manager อ่านชั่วคราวไม่ได้)"""
     try:
-        return bool(keyring.get_password(SERVICE, PIN_HASH_KEY))
+        raw = keyring.get_password(SERVICE, PINS_KEY)
+        pins = json.loads(raw) if raw else []
+        if not isinstance(pins, list):
+            pins = []
     except Exception:
-        return False
+        pins = []
+
+    if not pins:
+        try:
+            legacy = keyring.get_password(SERVICE, LEGACY_PIN_KEY)
+        except Exception:
+            legacy = None
+        if legacy and ":" in legacy:
+            salt_hex, hash_hex = legacy.split(":", 1)
+            pins = [{"name": LEGACY_PIN_NAME, "salt": salt_hex, "hash": hash_hex}]
+            try:
+                _save_pins(pins)
+                keyring.delete_password(SERVICE, LEGACY_PIN_KEY)
+            except Exception:
+                pass  # ย้ายลงที่เก็บถาวรไม่สำเร็จ — ใช้ค่าที่ย้ายไว้ในหน่วยความจำไปก่อนสำหรับรอบนี้พอ
+
+    return pins
+
+
+def list_pins() -> list:
+    """คืนรายชื่อ (name) ของ PIN ทั้งหมดที่ตั้งไว้ เรียงตามลำดับที่เพิ่ม — ไม่คืนตัว PIN/แฮชออกไปเด็ดขาด"""
+    return [p.get("name", "") for p in _load_pins()]
+
+
+def has_pin() -> bool:
+    """True ถ้าตั้ง PIN ไว้อย่างน้อย 1 ชุด"""
+    return len(_load_pins()) > 0
 
 
 def validate_pin_format(pin: str):
@@ -49,39 +95,64 @@ def validate_pin_format(pin: str):
     return None
 
 
-def set_pin(pin: str) -> None:
-    """ตั้ง/เปลี่ยน PIN — สุ่ม salt ใหม่ทุกครั้ง (เปลี่ยน PIN แล้ว PIN เก่าใช้ไม่ได้ทันที)"""
+def add_pin(name: str, pin: str) -> None:
+    """เพิ่ม PIN ชุดใหม่ต่อท้ายรายการ ตั้งชื่อเจ้าของไว้กำกับ — ชื่อห้ามว่าง/ซ้ำ (ไม่สนตัวพิมพ์เล็ก-ใหญ่
+    หรือช่องว่างหัวท้าย) และห้ามเกิน MAX_PINS ชุด — โยน ValueError พร้อมข้อความภาษาไทยถ้าไม่ผ่าน"""
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("กรุณาระบุชื่อเจ้าของ PIN")
+    if len(name) > MAX_NAME_LENGTH:
+        raise ValueError(f"ชื่อยาวเกินไป (ไม่เกิน {MAX_NAME_LENGTH} ตัวอักษร)")
     pin = (pin or "").strip()
     err = validate_pin_format(pin)
     if err:
         raise ValueError(err)
+
+    pins = _load_pins()
+    if len(pins) >= MAX_PINS:
+        raise ValueError(f"ตั้ง PIN ได้สูงสุด {MAX_PINS} ชุด — ลบชุดที่ไม่ใช้แล้วก่อน")
+    if any(p.get("name", "").strip().lower() == name.lower() for p in pins):
+        raise ValueError(f'มีชื่อ "{name}" อยู่แล้ว — ใช้ชื่ออื่น หรือลบชุดเดิมก่อนถ้าต้องการตั้งใหม่')
+
     salt = os.urandom(16)
     digest = _hash_pin(pin, salt)
-    keyring.set_password(SERVICE, PIN_HASH_KEY, salt.hex() + ":" + digest.hex())
+    pins.append({"name": name, "salt": salt.hex(), "hash": digest.hex()})
+    _save_pins(pins)
 
 
-def clear_pin() -> None:
-    """ปิดการใช้ PIN — ปุ่ม "รันจริง" กลับไปทำงานทันทีเหมือนก่อนตั้ง PIN ไม่มี error ถ้ายังไม่เคยตั้งไว้"""
+def remove_pin(name: str) -> None:
+    """ลบ PIN ชุดที่ชื่อตรงกัน (เทียบไม่สนตัวพิมพ์เล็ก-ใหญ่/ช่องว่างหัวท้าย) — ไม่มีชื่อนี้อยู่แล้วก็ไม่ error"""
+    pins = _load_pins()
+    key = (name or "").strip().lower()
+    remaining = [p for p in pins if p.get("name", "").strip().lower() != key]
+    if len(remaining) != len(pins):
+        _save_pins(remaining)
+
+
+def clear_all_pins() -> None:
+    """ลบ PIN ทุกชุดทิ้ง — ปุ่ม "รันจริง" กลับไปทำงานทันทีเหมือนก่อนตั้ง PIN เลย ไม่มี error ถ้ายังไม่เคยตั้งไว้"""
     try:
-        keyring.delete_password(SERVICE, PIN_HASH_KEY)
+        _save_pins([])
+    except Exception:
+        pass
+    try:
+        keyring.delete_password(SERVICE, LEGACY_PIN_KEY)
     except Exception:
         pass
 
 
-def verify_pin(pin: str) -> bool:
-    """True เฉพาะเมื่อกรอก PIN ตรงกับที่ตั้งไว้ — ถ้ายังไม่เคยตั้ง PIN เลยคืน False เสมอ (ฝั่งเรียกต้องเช็ก
-    has_pin() ก่อนเพื่อรู้ว่าจะถามหรือไม่ ไม่ใช่ตีความ False ตรงนี้ว่า "ไม่มี PIN เลยผ่านได้")"""
-    try:
-        stored = keyring.get_password(SERVICE, PIN_HASH_KEY)
-    except Exception:
-        return False
-    if not stored or ":" not in stored:
-        return False
-    salt_hex, hash_hex = stored.split(":", 1)
-    try:
-        salt = bytes.fromhex(salt_hex)
-        expected = bytes.fromhex(hash_hex)
-    except ValueError:
-        return False
-    actual = _hash_pin(pin or "", salt)
-    return hmac.compare_digest(actual, expected)
+def verify_pin(pin: str):
+    """คืน "ชื่อ" ของ PIN ชุดแรกที่ตรงกับที่กรอก (เอาไปบันทึกลงล็อกได้ว่าใครยืนยันรันรอบนั้น) หรือ None ถ้าไม่
+    ตรงชุดไหนเลย/ยังไม่เคยตั้ง PIN ไว้ — ทุกชุดเทียบแบบเวลาคงที่ (hmac.compare_digest) กัน timing attack"""
+    pin = pin or ""
+    matched = None
+    for p in _load_pins():
+        try:
+            salt = bytes.fromhex(p.get("salt", ""))
+            expected = bytes.fromhex(p.get("hash", ""))
+        except ValueError:
+            continue
+        actual = _hash_pin(pin, salt)
+        if hmac.compare_digest(actual, expected) and matched is None:
+            matched = p.get("name", "")
+    return matched

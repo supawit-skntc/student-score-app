@@ -400,7 +400,7 @@ function isRecordVisibleTo_(session, row) {
     return true;
   }
   const majors = session.majors || [];
-  return majors.length > 0 && majors.indexOf(String(row[6] || "").trim()) !== -1;
+  return majors.length > 0 && majors.indexOf(majorGroupOf_(row[6])) !== -1;
 }
 
 function mapRowToRecord_(row, session) {

@@ -85,7 +85,7 @@ export default function DashboardLayout({ children, setView, view = 'dashboard' 
     Swal.fire({
       icon: 'info',
       title: 'ออกจากระบบอัตโนมัติ',
-      text: 'ไม่มีการใช้งานเกิน 5 นาที ระบบออกจากระบบให้เพื่อความปลอดภัย',
+      text: 'ไม่มีการใช้งานเกิน 5 นาที',
       confirmButtonColor: '#8A2E42',
       confirmButtonText: 'เข้าสู่ระบบอีกครั้ง',
     }).then(() => setView('login'));

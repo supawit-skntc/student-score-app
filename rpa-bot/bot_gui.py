@@ -522,11 +522,12 @@ class BotControlPanel(ctk.CTk):
         ).pack(side="left", fill="x", expand=True, padx=(0, 13), pady=11)
 
     # ==========================================================
-    # PIN ยืนยันก่อนรันจริง (ไม่บังคับ) — ดูคำอธิบายเต็มใน run_lock.py
-    # เดิมเป็นแค่บรรทัดข้อความเล็กๆ ปนอยู่ท้ายรายการช่องกรอก (ฟอนต์เท่าป้ายกำกับ
-    # กลุ่มฟิลด์ธรรมดา) ผู้ใช้จริงหาไม่เจอ — เลยยกเป็นกล่องของตัวเองที่มีขอบ/พื้น
-    # หลังต่างสี หัวข้อใหญ่เท่าหัวการ์ด และปุ่ม "ตั้ง PIN" เป็นปุ่มสีเต็ม (ไม่ใช่
-    # แค่เส้นขอบ) ให้เด่นเหมือนปุ่ม "บันทึกการตั้งค่า" แทน
+    # PIN ยืนยันก่อนรันจริง (ไม่บังคับ, ตั้งได้หลายชุด) — ดูคำอธิบายเต็มใน run_lock.py
+    # เดิมเป็นแค่บรรทัดข้อความเล็กๆ ปนอยู่ท้ายรายการช่องกรอก ผู้ใช้จริงหาไม่เจอ — เลยยกเป็น
+    # กล่องของตัวเองที่มีขอบ/พื้นหลังต่างสี หัวข้อใหญ่เท่าหัวการ์ด ปักไว้เหนือปุ่มบันทึกเสมอ
+    # (ดูหมายเหตุใต้ฟังก์ชันนี้) — และแทนที่ PIN ชุดเดียวด้วยรายการหลายชุด แยกชื่อเจ้าของ
+    # (คำถามผู้ใช้ 28/9/69: "ถ้าคนรับผิดชอบหลักไม่อยู่ คนอื่นรันแทนได้ไหม") ใครใช้ PIN ของ
+    # ตัวเองรันก็ได้ ไม่ต้องรู้ PIN ของคนอื่น
     # ==========================================================
     def _build_pin_section(self, parent):
         card = ctk.CTkFrame(
@@ -541,7 +542,7 @@ class BotControlPanel(ctk.CTk):
         title_col = ctk.CTkFrame(head, fg_color="transparent")
         title_col.pack(side="left", fill="x", expand=True)
         ctk.CTkLabel(
-            title_col, text="ตั้งรหัส PIN ป้องกันการรันจริง", font=self.font_card_title,
+            title_col, text="PIN ป้องกันการรันจริง", font=self.font_card_title,
             text_color=COLORS["text"], anchor="w",
         ).pack(anchor="w")
         self.pin_status_label = ctk.CTkLabel(
@@ -560,26 +561,22 @@ class BotControlPanel(ctk.CTk):
 
         ctk.CTkLabel(
             body_wrap,
-            text="ถ้าตั้งไว้ ทุกครั้งที่กดปุ่ม \"รันจริง\" ด้วยมือต้องกรอก PIN นี้ก่อน กันคนอื่นมาเจอโปรแกรมที่เปิด"
-                 "ค้างอยู่แล้วกดรันเอง — ไม่ต้องกรอกตอนกด \"ทดสอบ\" และไม่กระทบการรันอัตโนมัติตามเวลาในขั้นตอนที่ 2",
+            text="ถ้าตั้งไว้อย่างน้อย 1 ชุด ทุกครั้งที่กดปุ่ม \"รันจริง\" ด้วยมือต้องกรอก PIN ที่ตรงชุดใดชุดหนึ่งก่อน "
+                 "กันคนอื่นมาเจอโปรแกรมที่เปิดค้างอยู่แล้วกดรันเอง — ตั้งได้หลายชุด แยกชื่อเจ้าของ เผื่อคนที่รับผิดชอบ"
+                 "หลักไม่อยู่ คนอื่นที่ได้รับอนุญาต (เช่น หัวหน้าแผนก) ใช้ PIN ของตัวเองรันแทนได้โดยไม่ต้องรู้ PIN คนอื่น "
+                 "— ไม่ต้องกรอกตอนกด \"ทดสอบ\" และไม่กระทบการรันอัตโนมัติตามเวลาในขั้นตอนที่ 2",
             font=self.font_hint, text_color=COLORS["text_muted"], anchor="w", justify="left", wraplength=320,
-        ).pack(fill="x", pady=(0, 12))
+        ).pack(fill="x", pady=(0, 10))
 
-        btn_row = ctk.CTkFrame(body_wrap, fg_color="transparent")
-        btn_row.pack(fill="x")
-        self.pin_set_btn = ctk.CTkButton(
-            btn_row, text="ตั้ง PIN", command=self._on_set_pin,
+        self.pin_list_frame = ctk.CTkFrame(body_wrap, fg_color="transparent")
+        self.pin_list_frame.pack(fill="x", pady=(0, 10))
+
+        self.pin_add_btn = ctk.CTkButton(
+            body_wrap, text="+ เพิ่ม PIN", command=self._on_add_pin,
             font=self.font_button, height=38, corner_radius=8,
             fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"], text_color="white",
         )
-        self.pin_set_btn.pack(side="left")
-        self.pin_clear_btn = ctk.CTkButton(
-            btn_row, text="ปิดใช้งาน PIN", command=self._on_clear_pin,
-            font=self.font_small_button, height=38, corner_radius=8,
-            fg_color=COLORS["surface"], hover_color=COLORS["surface_muted"],
-            text_color=COLORS["text_muted"], border_width=1, border_color=COLORS["border"],
-        )
-        self.pin_clear_btn.pack(side="left", padx=(8, 0))
+        self.pin_add_btn.pack(anchor="w")
 
         self._refresh_pin_status()
 
@@ -590,55 +587,137 @@ class BotControlPanel(ctk.CTk):
     # เสมอโดยไม่ต้องเลื่อน แลกกับพื้นที่เลื่อนของช่องกรอกที่เหลือน้อยลงเล็กน้อย
 
     def _refresh_pin_status(self):
-        has = run_lock.has_pin()
+        names = run_lock.list_pins()
+        has = len(names) > 0
         self.pin_status_label.configure(
-            text="● ตั้งไว้แล้ว" if has else "○ ยังไม่ได้ตั้ง",
+            text=f"● ตั้งไว้ {len(names)} ชุด" if has else "○ ยังไม่ได้ตั้ง",
             text_color=COLORS["success"] if has else COLORS["text_faint"],
         )
-        self.pin_set_btn.configure(text="เปลี่ยน PIN" if has else "ตั้ง PIN")
-        self.pin_clear_btn.configure(state="normal" if has else "disabled")
+
+        for w in self.pin_list_frame.winfo_children():
+            w.destroy()
+        if not names:
+            ctk.CTkLabel(
+                self.pin_list_frame, text="ยังไม่ได้ตั้ง PIN ไว้เลย", font=self.font_hint,
+                text_color=COLORS["text_faint"], anchor="w",
+            ).pack(anchor="w")
+            return
+        for name in names:
+            row = ctk.CTkFrame(self.pin_list_frame, fg_color=COLORS["surface"], corner_radius=8, border_width=1, border_color=COLORS["border"])
+            row.pack(fill="x", pady=(0, 6))
+            ctk.CTkLabel(
+                row, text=name, font=self.font_label, text_color=COLORS["text"], anchor="w",
+            ).pack(side="left", padx=(12, 6), pady=8, fill="x", expand=True)
+            ctk.CTkButton(
+                row, text="ลบ", width=52, height=26, corner_radius=6, font=self.font_hint,
+                fg_color=COLORS["surface"], hover_color=COLORS["surface_muted"], text_color=COLORS["warning"],
+                border_width=1, border_color=COLORS["border"],
+                command=lambda n=name: self._on_remove_pin(n),
+            ).pack(side="right", padx=(0, 8), pady=6)
 
     def _confirm_current_pin(self, title):
-        """ถ้าตั้ง PIN ไว้แล้ว ต้องกรอก PIN เดิมให้ถูกก่อนเสมอถึงจะเปลี่ยน/ปิดใช้งานได้ — ไม่งั้นใครก็ตามที่มา
-        เจอโปรแกรมเปิดค้างอยู่ (ภัยคุกคามเดียวกับที่ PIN นี้ตั้งใจกันตั้งแต่แรก) จะกด "เปลี่ยน PIN"/"ปิดใช้งาน
-        PIN" ปลดล็อกเองได้เฉยๆ โดยไม่ต้องรู้ PIN เลย ทำให้ทั้งฟีเจอร์ไม่มีความหมาย
-        คืน True ถ้าไม่เคยตั้ง PIN มาก่อน (ไม่มีอะไรให้ยืนยัน) หรือกรอก PIN เดิมถูกต้อง"""
+        """ถ้าตั้ง PIN ไว้แล้วอย่างน้อย 1 ชุด ต้องกรอก PIN ที่ตรงชุดใดชุดหนึ่งให้ถูกก่อนเสมอถึงจะเพิ่ม/ลบชุดใดๆ
+        ได้ — ไม่งั้นใครก็ตามที่มาเจอโปรแกรมเปิดค้างอยู่ (ภัยคุกคามเดียวกับที่ PIN นี้ตั้งใจกันตั้งแต่แรก) จะกด
+        "+ เพิ่ม PIN" ตั้ง PIN ของตัวเองแทรกเข้ามาได้เฉยๆ โดยไม่ต้องรู้ PIN ที่มีอยู่เลย ทำให้ทั้งฟีเจอร์ไม่มีความหมาย
+        คืน True ถ้ายังไม่เคยตั้ง PIN ไว้เลยสักชุด (ไม่มีอะไรให้ยืนยัน — ตั้งชุดแรกได้ทันที) หรือกรอก PIN ที่มีอยู่ถูกต้อง"""
         if not run_lock.has_pin():
             return True
-        current = self._prompt_pin_dialog(title, "กรอก PIN เดิมก่อนเพื่อยืนยันตัวตน")
+        current = self._prompt_pin_dialog(title, "กรอก PIN ที่มีอยู่ชุดใดชุดหนึ่งก่อนเพื่อยืนยันตัวตน")
         if current is None:
             return False
         if not run_lock.verify_pin(current):
-            messagebox.showerror("PIN ไม่ถูกต้อง", "PIN เดิมที่กรอกไม่ถูกต้อง")
+            messagebox.showerror("PIN ไม่ถูกต้อง", "PIN ที่กรอกไม่ตรงกับชุดที่มีอยู่ชุดใดเลย")
             return False
         return True
 
-    def _on_set_pin(self):
-        if not self._confirm_current_pin("ยืนยันก่อนเปลี่ยน PIN"):
+    def _on_add_pin(self):
+        if not self._confirm_current_pin("ยืนยันก่อนเพิ่ม PIN ใหม่"):
+            return
+        name = self._prompt_text_dialog("เพิ่ม PIN ใหม่", "ชื่อเจ้าของ PIN ชุดนี้ (เช่น ชื่อเจ้าหน้าที่ หรือ \"หัวหน้าแผนก\")")
+        if name is None:
+            return
+        name = name.strip()
+        if not name:
+            messagebox.showwarning("เพิ่ม PIN ไม่สำเร็จ", "กรุณาระบุชื่อเจ้าของ PIN")
             return
         pin = self._prompt_pin_dialog(
-            "ตั้ง PIN ยืนยันก่อนรันจริง",
-            f"กำหนด PIN ({run_lock.MIN_PIN_LENGTH}-{run_lock.MAX_PIN_LENGTH} ตัวอักษร) ที่ต้องกรอกก่อนกด "
+            f'ตั้ง PIN สำหรับ "{name}"',
+            f"กำหนด PIN ({run_lock.MIN_PIN_LENGTH}-{run_lock.MAX_PIN_LENGTH} ตัวอักษร) ที่ \"{name}\" จะใช้กรอกก่อนกด "
             "\"รันจริง\" ด้วยมือทุกครั้ง",
             confirm=True,
         )
         if pin is None:
             return
         try:
-            run_lock.set_pin(pin)
+            run_lock.add_pin(name, pin)
         except ValueError as e:
-            messagebox.showwarning("ตั้ง PIN ไม่สำเร็จ", str(e))
+            messagebox.showwarning("เพิ่ม PIN ไม่สำเร็จ", str(e))
             return
         self._refresh_pin_status()
-        messagebox.showinfo("ตั้ง PIN แล้ว", "ตั้งค่า PIN ยืนยันก่อนรันจริงเรียบร้อยแล้ว")
+        messagebox.showinfo("เพิ่ม PIN แล้ว", f'เพิ่ม PIN สำหรับ "{name}" เรียบร้อยแล้ว')
 
-    def _on_clear_pin(self):
-        if not self._confirm_current_pin("ยืนยันก่อนปิดใช้งาน PIN"):
+    def _on_remove_pin(self, name):
+        if not self._confirm_current_pin(f'ยืนยันก่อนลบ PIN ของ "{name}"'):
             return
-        if not messagebox.askyesno("ปิดใช้งาน PIN", "ปิดการใช้ PIN ยืนยันก่อนรันจริง — ต้องการดำเนินการต่อหรือไม่?"):
+        if not messagebox.askyesno("ลบ PIN", f'ลบ PIN ของ "{name}" — ต้องการดำเนินการต่อหรือไม่?'):
             return
-        run_lock.clear_pin()
+        run_lock.remove_pin(name)
         self._refresh_pin_status()
+
+    def _prompt_text_dialog(self, title, subtitle):
+        """หน้าต่างเล็กๆ ขอกรอกข้อความธรรมดา 1 บรรทัด (ไม่ซ่อนตัวอักษร ต่างจาก _prompt_pin_dialog) — ใช้ตอน
+        ตั้งชื่อเจ้าของ PIN คืนข้อความที่กรอก หรือ None ถ้ายกเลิก/ปิดหน้าต่าง"""
+        result = {"value": None}
+        dlg = ctk.CTkToplevel(self)
+        dlg.title(title)
+        dlg.configure(fg_color=COLORS["bg"])
+        dlg.resizable(False, False)
+        dlg.transient(self)
+
+        ctk.CTkLabel(
+            dlg, text=subtitle, font=self.font_label, text_color=COLORS["text_muted"],
+            wraplength=300, justify="left",
+        ).pack(padx=20, pady=(18, 10), anchor="w", fill="x")
+
+        name_var = ctk.StringVar()
+        entry = ctk.CTkEntry(
+            dlg, textvariable=name_var, font=self.font_input, height=42, corner_radius=10,
+            fg_color=COLORS["surface_muted"], border_color=COLORS["border"], border_width=1,
+        )
+        entry.pack(padx=20, fill="x")
+
+        def on_ok(_event=None):
+            result["value"] = name_var.get()
+            dlg.destroy()
+
+        def on_cancel(_event=None):
+            dlg.destroy()
+
+        btn_row = ctk.CTkFrame(dlg, fg_color="transparent")
+        btn_row.pack(fill="x", padx=20, pady=(14, 16), side="bottom")
+        ctk.CTkButton(
+            btn_row, text="ยกเลิก", command=on_cancel, font=self.font_small_button,
+            fg_color=COLORS["segment_track"], text_color=COLORS["text"], hover_color=COLORS["border"],
+        ).pack(side="left", expand=True, fill="x", padx=(0, 6))
+        ctk.CTkButton(
+            btn_row, text="ตกลง", command=on_ok, font=self.font_small_button,
+            fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"],
+        ).pack(side="left", expand=True, fill="x", padx=(6, 0))
+
+        dlg.bind("<Return>", on_ok)
+        dlg.bind("<Escape>", on_cancel)
+        dlg.protocol("WM_DELETE_WINDOW", on_cancel)
+
+        dlg.update_idletasks()
+        width, height = 340, dlg.winfo_reqheight()
+        x = self.winfo_x() + (self.winfo_width() - width) // 2
+        y = self.winfo_y() + (self.winfo_height() - height) // 2
+        dlg.geometry(f"{width}x{height}+{max(x, 0)}+{max(y, 0)}")
+
+        entry.focus_set()
+        dlg.grab_set()
+        self.wait_window(dlg)
+        return result["value"]
 
     def _prompt_pin_dialog(self, title, subtitle, confirm=False):
         """หน้าต่างเล็กๆ ขอกรอก PIN (ซ่อนตัวอักษรเสมอ) — confirm=True ให้กรอกซ้ำ 2 ครั้งและต้องผ่านการตรวจ
@@ -646,7 +725,6 @@ class BotControlPanel(ctk.CTk):
         result = {"value": None}
         dlg = ctk.CTkToplevel(self)
         dlg.title(title)
-        dlg.geometry("340x260" if confirm else "340x190")
         dlg.configure(fg_color=COLORS["bg"])
         dlg.resizable(False, False)
         dlg.transient(self)
@@ -707,6 +785,17 @@ class BotControlPanel(ctk.CTk):
         dlg.bind("<Return>", on_ok)
         dlg.bind("<Escape>", on_cancel)
         dlg.protocol("WM_DELETE_WINDOW", on_cancel)
+
+        # 🐛 เดิมตั้งความสูงหน้าต่างตายตัว (260/190px) กะเอาเอง ไม่พอกับเนื้อหาจริง (ฟอนต์/
+        # การตัดบรรทัดของ subtitle ต่างกันไปแต่ละข้อความ) ทำให้แถวปุ่ม "ตกลง"/"ยกเลิก" ที่
+        # pack(side="bottom") ไว้ ถูกดันเลยขอบล่างของหน้าต่างที่ resizable(False, False)
+        # ไปเลย — มองไม่เห็นปุ่มและกดไม่ได้ (ผู้ใช้รายงาน "ปุ่มตั้งค่า PIN บันทึกไม่ได้")
+        # แก้โดยให้ Tk คำนวณความสูงที่ต้องใช้จริงจากเนื้อหาที่ pack ไว้ทั้งหมดแทนการเดาค่าคงที่
+        dlg.update_idletasks()
+        width, height = 340, dlg.winfo_reqheight()
+        x = self.winfo_x() + (self.winfo_width() - width) // 2
+        y = self.winfo_y() + (self.winfo_height() - height) // 2
+        dlg.geometry(f"{width}x{height}+{max(x, 0)}+{max(y, 0)}")
 
         entry.focus_set()
         dlg.grab_set()  # โมดัล — ต้องจัดการหน้าต่างนี้ก่อนถึงจะกลับไปหน้าต่างหลักได้ (กันเผื่อคลิกไปมั่ว)
@@ -959,13 +1048,17 @@ class BotControlPanel(ctk.CTk):
         if not dry_run and not auto and run_lock.has_pin():
             pin = self._prompt_pin_dialog(
                 "ยืนยันก่อนรันจริง",
-                "กรอก PIN เพื่อยืนยันก่อนบันทึกข้อมูลลงระบบ RMS จริง",
+                "กรอก PIN ที่ตรงชุดใดชุดหนึ่งเพื่อยืนยันก่อนบันทึกข้อมูลลงระบบ RMS จริง",
             )
             if pin is None:
                 return
-            if not run_lock.verify_pin(pin):
-                messagebox.showerror("PIN ไม่ถูกต้อง", "PIN ที่กรอกไม่ถูกต้อง ยกเลิกการรันจริงรอบนี้")
+            confirmed_by = run_lock.verify_pin(pin)
+            if not confirmed_by:
+                messagebox.showerror("PIN ไม่ถูกต้อง", "PIN ที่กรอกไม่ตรงกับชุดที่มีอยู่ชุดใดเลย ยกเลิกการรันจริงรอบนี้")
                 return
+            # บันทึกไว้ในคอนโซลว่า PIN ของใครเป็นคนยืนยัน (ตอบคำถามผู้ใช้ 28/9/69 — ตั้งได้หลายชุดแล้ว
+            # ใครที่ไม่ใช่เจ้าหน้าที่หลักมารันแทนก็ยังรู้ได้ว่าเป็นใคร ไม่ใช่ทุกคนแชร์ PIN เดียวกันแบบเดิม)
+            self._append_log(f'ยืนยันก่อนรันจริงด้วย PIN ของ "{confirmed_by}"')
 
         mode = "test" if dry_run else "real"
         self._update_mode_visual(mode)
