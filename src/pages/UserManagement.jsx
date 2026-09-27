@@ -256,11 +256,16 @@ export default function UserManagement() {
         </div>
       )}
 
-      {/* --- Add / edit modal --- */}
+      {/* --- Add / edit modal ---
+          🐛 เดิมการ์ดนี้ไม่มี max-height/overflow เลย — พอเพิ่มตัวเลือก "สาขาที่รับผิดชอบ" เป็น 14
+          ปุ่ม + คำอธิบายยาวขึ้น เนื้อหาก็สูงเกินจอ (โดยเฉพาะจอเตี้ย/มือถือ) ทำให้ปุ่ม "บันทึก" ที่อยู่
+          ล่างสุดหลุดออกนอกวิวพอร์ตไปเลยโดยไม่มีทางเลื่อนจอไปกดได้ (ผู้ใช้รายงาน "ปุ่มบันทึกหลุดจอ")
+          แก้ตามแพตเทิร์นเดียวกับ EditRecordModal.jsx: จำกัดความสูงสูงสุด + เลื่อนเนื้อหาข้างในได้ +
+          หัวการ์ดปักอยู่กับที่ขณะเลื่อน + มือถือกางเป็นแผ่นเลื่อนขึ้นจากขอบล่างจอเต็มความกว้าง */}
       {modalMode && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-brand-900/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-card-lg w-full max-w-lg">
-            <div className="p-6 flex justify-between items-center border-b border-slate-100">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-brand-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-card-lg w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 z-10 bg-white p-6 flex justify-between items-center border-b border-slate-100">
               <h2 className="font-display text-xl font-semibold text-brand-800">
                 {modalMode === 'create' ? 'เพิ่มผู้ใช้งานใหม่' : 'แก้ไขข้อมูลผู้ใช้งาน'}
               </h2>
