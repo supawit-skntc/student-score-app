@@ -571,7 +571,24 @@ class BotControlPanel(ctk.CTk):
         self.pin_set_btn.configure(text="เปลี่ยน PIN" if has else "ตั้ง PIN")
         self.pin_clear_btn.configure(state="normal" if has else "disabled")
 
+    def _confirm_current_pin(self, title):
+        """ถ้าตั้ง PIN ไว้แล้ว ต้องกรอก PIN เดิมให้ถูกก่อนเสมอถึงจะเปลี่ยน/ปิดใช้งานได้ — ไม่งั้นใครก็ตามที่มา
+        เจอโปรแกรมเปิดค้างอยู่ (ภัยคุกคามเดียวกับที่ PIN นี้ตั้งใจกันตั้งแต่แรก) จะกด "เปลี่ยน PIN"/"ปิดใช้งาน
+        PIN" ปลดล็อกเองได้เฉยๆ โดยไม่ต้องรู้ PIN เลย ทำให้ทั้งฟีเจอร์ไม่มีความหมาย
+        คืน True ถ้าไม่เคยตั้ง PIN มาก่อน (ไม่มีอะไรให้ยืนยัน) หรือกรอก PIN เดิมถูกต้อง"""
+        if not run_lock.has_pin():
+            return True
+        current = self._prompt_pin_dialog(title, "กรอก PIN เดิมก่อนเพื่อยืนยันตัวตน")
+        if current is None:
+            return False
+        if not run_lock.verify_pin(current):
+            messagebox.showerror("PIN ไม่ถูกต้อง", "PIN เดิมที่กรอกไม่ถูกต้อง")
+            return False
+        return True
+
     def _on_set_pin(self):
+        if not self._confirm_current_pin("ยืนยันก่อนเปลี่ยน PIN"):
+            return
         pin = self._prompt_pin_dialog(
             "ตั้ง PIN ยืนยันก่อนรันจริง",
             f"กำหนด PIN ({run_lock.MIN_PIN_LENGTH}-{run_lock.MAX_PIN_LENGTH} ตัวอักษร) ที่ต้องกรอกก่อนกด "
@@ -589,6 +606,8 @@ class BotControlPanel(ctk.CTk):
         messagebox.showinfo("ตั้ง PIN แล้ว", "ตั้งค่า PIN ยืนยันก่อนรันจริงเรียบร้อยแล้ว")
 
     def _on_clear_pin(self):
+        if not self._confirm_current_pin("ยืนยันก่อนปิดใช้งาน PIN"):
+            return
         if not messagebox.askyesno("ปิดใช้งาน PIN", "ปิดการใช้ PIN ยืนยันก่อนรันจริง — ต้องการดำเนินการต่อหรือไม่?"):
             return
         run_lock.clear_pin()
