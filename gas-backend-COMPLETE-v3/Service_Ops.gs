@@ -67,11 +67,16 @@ function notifyAdminOfError_(err, context) {
 // ==========================================
 const RATE_LIMIT_MAX_PER_MINUTE = 120;
 
-function checkRateLimit_(token) {
-  if (!token) return; // ไม่มี token ผ่านไม่ได้อยู่แล้วจาก requireSession ที่เรียกก่อนหน้า
+// 🔒 คีย์ด้วยชื่อผู้ใช้ ไม่ใช่ token (คำขอผู้ใช้ 28/9/69 ตรวจพบระหว่างตรวจสอบระบบ) — เดิมคีย์ด้วย token
+// เฉยๆ ทำให้ล็อกอินใหม่ (ได้ token ใหม่) รีเซ็ตโควตาได้ตลอด ใครก็ตามที่รู้รหัสผ่านที่ถูกต้องเลี่ยงเพดาน
+// นี้ได้ง่ายๆ ด้วยการล็อกอินซ้ำไปเรื่อยๆ — ตอนนี้ระบบบังคับ "1 บัญชีใช้ได้ทีละ 1 เครื่อง" แล้ว
+// (setActiveSession_ ด้านบน) การคีย์ด้วยชื่อผู้ใช้จึงเทียบเท่ากับคีย์ด้วย session ที่ใช้งานจริงอยู่พอดี
+// และล็อกอินใหม่ก็ไม่ได้ทำให้โควตาเดิมหายไปอีกต่อไป
+function checkRateLimit_(username) {
+  if (!username) return; // ไม่มีชื่อผู้ใช้ผ่านไม่ได้อยู่แล้วจาก requireSession ที่เรียกก่อนหน้า
   const cache = CacheService.getScriptCache();
   const windowId = Math.floor(Date.now() / 60000); // แบ่งเป็นช่วงละ 1 นาที
-  const key = 'rl_' + token + '_' + windowId;
+  const key = 'rl_' + String(username).trim() + '_' + windowId;
   const current = parseInt(cache.get(key) || '0', 10);
 
   if (current >= RATE_LIMIT_MAX_PER_MINUTE) {

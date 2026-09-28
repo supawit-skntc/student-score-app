@@ -8,6 +8,8 @@ import { currentAcademicYear } from '../data/academicYear';
 import { downloadCsv } from '../utils/csv';
 import { todayLocalISO } from '../utils/date';
 import { parsePoints, currentYearStudentTotals } from '../utils/points';
+import { chipToneCls } from '../utils/chipStyle';
+import { SYNC_STATUS_MAP } from '../data/syncStatus';
 import { escapeHtml } from '../utils/html';
 import EditRecordModal from '../components/EditRecordModal';
 import Pagination from '../components/ui/Pagination';
@@ -19,19 +21,11 @@ const PAGE_SIZE = 20;
 // text-[16px] (ไม่ใช่ 13px) เพราะเป็นฟอนต์ของ <select>/<input type="date"> จริง
 // — ต่ำกว่า 16px iOS Safari จะซูมจอเข้าอัตโนมัติทุกครั้งที่แตะโฟกัสบนมือถือ
 const filterCls = "min-h-[42px] rounded-[13px] border-[1.5px] border-[#EADFDF] px-3 text-[16px] font-semibold outline-none focus:border-brand-500 bg-white text-ink-soft";
-const chipCls = (active) => `min-h-[42px] rounded-[13px] px-3.5 text-[13px] font-semibold border-[1.5px] transition-colors ${
-  active ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-[#EADFDF] bg-white text-ink-soft hover:bg-line-soft'
-}`;
+const chipCls = (active) => `min-h-[42px] rounded-[13px] px-3.5 text-[13px] font-semibold border-[1.5px] transition-colors ${chipToneCls(active)}`;
 
 // สถานะ sync เข้าระบบ RMS (rmsSyncStatus จาก getRecords) — ข้อมูลนี้มีอยู่แล้วจาก
 // backend แต่เดิมหน้านี้ไม่เคยแสดงให้ครูเห็นเลยว่ารายการที่บันทึกไปแล้วเข้า RMS
-// จริงหรือยัง
-const SYNC_STATUS_MAP = {
-  pending: { label: 'รอส่งเข้า RMS', cls: 'bg-gold-50 text-gold-700' },
-  synced: { label: 'เข้า RMS แล้ว', cls: 'bg-ok-bg text-ok-fg' },
-  needs_review: { label: 'ต้องตรวจสอบ', cls: 'bg-warn-bg text-warn-fg' },
-  error: { label: 'ผิดพลาด', cls: 'bg-bad-bg text-bad-fg' },
-};
+// จริงหรือยัง (ย้ายไปไว้ที่ src/data/syncStatus.js ให้หน้าอื่น เช่น StudentProfile.jsx ใช้ร่วมกันได้)
 
 export default function Report({ onViewStudent }) {
   const [records, setRecords] = useState([]);
@@ -397,6 +391,7 @@ export default function Report({ onViewStudent }) {
             <input
               type="text"
               placeholder="ค้นหารหัส, ชื่อ, ความผิด..."
+              aria-label="ค้นหารหัส, ชื่อ, ความผิด"
               className="w-full min-h-12 pl-[42px] pr-4 border-[1.5px] border-[#E3D9DA] rounded-[14px] focus:border-brand-500 outline-none transition text-[16px]"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}

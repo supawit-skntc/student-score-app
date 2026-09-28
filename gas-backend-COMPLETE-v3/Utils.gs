@@ -203,6 +203,29 @@ function generateSalt() {
   return Utilities.getUuid().replace(/-/g, '');
 }
 
+// รูปแบบรหัสนักเรียนที่ถูกต้อง — เดิมประกาศ regex เดียวกันซ้ำแยกกันใน Service_Records.gs และ
+// Service_Probation.gs เสี่ยงแก้กติกาที่นึงแล้วอีกที่ไม่ตามกันแบบเงียบๆ
+function isValidStudentId_(studentId) {
+  return /^[0-9A-Za-z-]{4,20}$/.test(studentId);
+}
+
+// 🔒 เทียบสตริง 2 ตัวแบบเวลาคงที่ (ไม่ short-circuit ที่ตัวอักษรแรกที่ไม่ตรง) — ใช้เทียบแฮชรหัสผ่านตอนล็อกอิน
+// (ดู handleLogin ใน Service_Auth.gs) กัน timing side-channel ที่เดิมใช้ === ธรรมดาเปิดช่องให้เดาแฮชได้ทีละ
+// ตัวอักษรจากเวลาตอบสนองที่ต่างกันเล็กน้อย ความยาวไม่เท่ากันถือว่าไม่ตรงเสมอ (แต่ยังวนลูปจนจบเพื่อไม่ให้เวลา
+// ต่างจากกรณีความยาวเท่ากันมากเกินไป)
+function timingSafeEqual_(a, b) {
+  const sa = String(a == null ? '' : a);
+  const sb = String(b == null ? '' : b);
+  const len = Math.max(sa.length, sb.length, 1);
+  let diff = sa.length === sb.length ? 0 : 1;
+  for (let i = 0; i < len; i++) {
+    const ca = i < sa.length ? sa.charCodeAt(i) : 0;
+    const cb = i < sb.length ? sb.charCodeAt(i) : 0;
+    diff |= ca ^ cb;
+  }
+  return diff === 0;
+}
+
 // ==========================================
 // 🔑 Session management
 // ก่อนหน้านี้ทุก action (addRecord, getRecords, updateRecord ฯลฯ) ไม่มีการ
@@ -352,7 +375,7 @@ function requireSession(token) {
   const session = getSession(token);
   if (!session) throw new Error('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
   if (!REQUEST_MEMO_.rateChecked[token]) {
-    checkRateLimit_(token);
+    checkRateLimit_(session.username);
     REQUEST_MEMO_.rateChecked[token] = true;
   }
   return session;

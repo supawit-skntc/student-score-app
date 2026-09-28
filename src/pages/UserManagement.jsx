@@ -230,14 +230,14 @@ export default function UserManagement() {
                       <div className="flex items-center justify-center gap-2">
                         <button
                           onClick={() => openEdit(u)}
-                          className="inline-flex items-center justify-center text-gold-700 hover:text-gold-800 bg-gold-50 hover:bg-gold-100 p-2 rounded-full transition-colors"
+                          className="inline-flex min-h-11 min-w-11 items-center justify-center text-gold-700 hover:text-gold-800 bg-gold-50 hover:bg-gold-100 p-2 rounded-full transition-colors"
                           title="แก้ไขข้อมูล"
                         >
                           <Pencil size={16} />
                         </button>
                         <button
                           onClick={() => handleDelete(u)}
-                          className="inline-flex items-center justify-center text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 p-2 rounded-full transition-colors"
+                          className="inline-flex min-h-11 min-w-11 items-center justify-center text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 p-2 rounded-full transition-colors"
                           title="ลบผู้ใช้งาน"
                         >
                           <Trash2 size={16} />

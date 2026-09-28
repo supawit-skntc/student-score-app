@@ -96,7 +96,7 @@ function addProbationRecord(token, data) {
   const studentId = String((data && data.studentId) || '').trim();
   if (!studentId) return { status: "error", message: "ไม่พบรหัสนักเรียน" };
   // รูปแบบเดียวกับรหัสนักเรียนในรายการตัดคะแนน (กันสูตร Sheets ในช่องนี้ ซึ่งเดิมไม่ผ่านตัวกรอง) และวันที่ต้องเป็นวันที่จริง
-  if (!/^[0-9A-Za-z-]{4,20}$/.test(studentId)) return { status: "error", message: "รหัสนักเรียนไม่ถูกต้อง" };
+  if (!isValidStudentId_(studentId)) return { status: "error", message: "รหัสนักเรียนไม่ถูกต้อง" };
   const probationDate = String((data && data.date) || '').trim();
   if (probationDate && !isValidIsoDate_(probationDate)) return { status: "error", message: "วันที่ไม่ถูกต้อง" };
 

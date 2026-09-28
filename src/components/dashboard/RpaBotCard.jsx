@@ -32,6 +32,8 @@ function RpaStat({ label, value, tone }) {
 // สถานะ RPA Bot จากข้อมูลจริงในชีต RPA_Log — รายละเอียดเชิงปฏิบัติการ ให้เฉพาะ
 // admin เห็น (Dashboard.jsx เป็นคนตัดสินใจว่าจะ render การ์ดนี้หรือไม่)
 export default function RpaBotCard({ rpaStats, rpaLoading }) {
+  // คำนวณค่าสูงสุดครั้งเดียวไว้ก่อน map() แท่งกราฟ — เดิมเรียก Math.max(...) ซ้ำทุกแท่งในลูป
+  const maxDuration = rpaStats?.recentDurations?.length > 0 ? Math.max(...rpaStats.recentDurations) : 1;
   return (
     <div className="bg-white p-[18px] rounded-[20px] border border-line">
       <div className="flex items-center gap-2.5 mb-5">
@@ -69,17 +71,14 @@ export default function RpaBotCard({ rpaStats, rpaLoading }) {
             <div className="mt-5">
               <p className="text-xs text-ink-faint mb-2">เวลาที่ใช้ต่อรายการ ({rpaStats.recentDurations.length} รายการล่าสุด)</p>
               <div className="flex items-end gap-1.5 h-10">
-                {rpaStats.recentDurations.map((d, i) => {
-                  const max = Math.max(...rpaStats.recentDurations);
-                  return (
-                    <div
-                      key={i}
-                      className="flex-1 bg-gold-400 rounded-t"
-                      style={{ height: `${Math.max(10, (d / max) * 100)}%` }}
-                      title={`${d} วินาที`}
-                    />
-                  );
-                })}
+                {rpaStats.recentDurations.map((d, i) => (
+                  <div
+                    key={i}
+                    className="flex-1 bg-gold-400 rounded-t"
+                    style={{ height: `${Math.max(10, (d / maxDuration) * 100)}%` }}
+                    title={`${d} วินาที`}
+                  />
+                ))}
               </div>
             </div>
           )}

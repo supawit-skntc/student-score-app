@@ -53,6 +53,12 @@ export default function ThaiDateInput({
         <span className={display ? '' : 'text-ink-faint'}>{display || placeholder}</span>
         <CalendarIcon className="h-4 w-4 shrink-0 text-ink-faint" />
       </div>
+      {/* pointer-events-none: เดิมช่อง input นี้ (absolute, ไม่มี z-index) วางทับกล่องแสดงผลด้านบนอยู่แล้ว
+          ตามกฎ stacking ของ CSS (positioned element ลอยเหนือ static element เสมอไม่ว่าลำดับ DOM จะเป็นยังไง)
+          ทำให้คลิกทุกครั้งไปโดนช่อง input นี้ตรงๆ อยู่แล้วโดยไม่เคยผ่าน onClick ของกล่องด้านบนเลยสักครั้ง —
+          ปิดรับ pointer event ที่นี่ ให้คลิกทั้งหมดทะลุไปโดน onClick={openPicker} ของกล่องแทน (เรียก
+          showPicker() เอง เชื่อถือได้กว่าพฤติกรรมเปิด picker อัตโนมัติของเบราว์เซอร์ที่ต่างกันไปแต่ละที่)
+          ยังกด Tab มาโฟกัสช่องนี้ได้ตามปกติ (คีย์บอร์ดไม่ถูก pointer-events บล็อก) */}
       <input
         ref={inputRef}
         type="date"
@@ -61,7 +67,7 @@ export default function ThaiDateInput({
         onChange={onChange}
         required={required}
         aria-label={ariaLabel || placeholder}
-        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        className="absolute inset-0 h-full w-full pointer-events-none opacity-0"
       />
     </div>
   );

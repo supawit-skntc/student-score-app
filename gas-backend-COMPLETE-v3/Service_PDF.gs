@@ -1,4 +1,4 @@
-function generatePDF(data, refId) {
+function generatePDF(data) {
     if (!data) return "";
 
     // 1. 🗓️ แปลงวันที่เป็นภาษาไทย — ใช้ formatThaiDate_ ร่วมกับจุดอื่น (Utils.gs)
@@ -227,7 +227,7 @@ function generatePdfForRow_(sheet, rowIndex, recordId) {
   try {
     const row = sheet.getRange(rowIndex, 1, 1, 13).getValues()[0];
     const data = rowToPdfData_(row);
-    const pdfUrl = generatePDF(data, recordId);
+    const pdfUrl = generatePDF(data);
     sheet.getRange(rowIndex, 14).setValue(pdfUrl);
     invalidateRecordsCache_();
     return { status: "success", message: "จัดทำเอกสาร PDF สำเร็จ", pdfUrl: pdfUrl };
@@ -241,7 +241,7 @@ function generatePdfForRow_(sheet, rowIndex, recordId) {
 // เรียกจากฝั่งเว็บทันทีหลัง addRecord สำเร็จ (ดู DeductionForm.jsx) — ปลอดภัยที่จะ
 // เรียกซ้ำได้เสมอ (idempotent) เพราะเช็ก existingPdfUrl ก่อนเสมอในฟังก์ชันด้านบน
 function generateRecordPdf(token, recordId) {
-  requireSession(token);
+  const session = requireSession(token);
   if (!recordId) return { status: "error", message: "ไม่พบรหัสรายการ" };
 
   const sheet = getSheet_("Records");
@@ -249,6 +249,14 @@ function generateRecordPdf(token, recordId) {
 
   const rowIndex = findRecordRowIndexById_(sheet, recordId);
   if (rowIndex === null) return { status: "error", message: "ไม่พบรายการที่ id นี้: " + recordId };
+
+  // 🔒 ต้องเช็กสิทธิ์มองเห็นก่อนสร้าง/คืนลิงก์ PDF เสมอ — เดิมจุดนี้ไม่มีเลย ครูคนไหน login อยู่ก็ขอ PDF
+  // ของนักเรียนนอกสาขา/นอกรายการของตัวเองได้หมด ทั้งที่ getRecords/updateRecord กรองสิทธิ์ไว้แล้ว (ดู
+  // isRecordVisibleTo_ ใน Service_Records.gs — ครอบคลุม admin/full-tier ให้ผ่านเสมออยู่ในตัว)
+  const row = sheet.getRange(rowIndex, 1, 1, 19).getValues()[0];
+  if (!isRecordVisibleTo_(session, row)) {
+    return { status: "error", message: "ไม่มีสิทธิ์เข้าถึงรายการนี้" };
+  }
 
   return generatePdfForRow_(sheet, rowIndex, recordId);
 }

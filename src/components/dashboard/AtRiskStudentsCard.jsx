@@ -1,18 +1,8 @@
 import React, { useState } from 'react';
 import { ShieldAlert, Copy, Check, Eye, EyeOff } from 'lucide-react';
 import { maskThaiName } from '../../utils/privacy';
-
-const SCORE_BOX_CLS = {
-  notice: 'bg-gold-50 text-gold-700',
-  warn: 'bg-warn-bg text-warn-fg',
-  critical: 'bg-bad-bg text-bad-fg',
-};
-
-const ACTION_PILL_CLS = {
-  notice: 'bg-gold-50 text-gold-700',
-  warn: 'bg-warn-bg text-warn-fg',
-  critical: 'bg-bad-bg text-bad-fg',
-};
+import { TONE_CLS } from '../../data/tone';
+import { useRevealedSet } from '../../hooks/useRevealedSet';
 
 // ตัวกรองระดับคะแนน — เพิ่มเข้ามาแทนที่จะสร้างวิดเจ็ตแยกต่างหากสำหรับ "≥20 คะแนน
 // เข้าค่ายปรับเปลี่ยนพฤติกรรม" เพราะข้อมูลชุดเดียวกับที่การ์ดนี้แสดงอยู่แล้ว
@@ -35,14 +25,7 @@ export default function AtRiskStudentsCard({ students, thisAcademicYear, onViewS
   const [copied, setCopied] = useState(false);
   // ปิดบังชื่อทีละแถวแทนสวิตช์รวมหน้าเดียว (ฟีดแบ็กผู้ใช้ 28/9/69) — ซ่อนไว้ก่อนเสมอทุกครั้งที่
   // เปิดหน้านี้ใหม่ (ไม่จำข้ามหน้า) เหมือนตัวเดิม แค่ย้ายปุ่มดวงตาไปติดท้ายชื่อแต่ละคนแทน
-  const [revealedIds, setRevealedIds] = useState(() => new Set());
-  const toggleReveal = (studentId) => {
-    setRevealedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(studentId)) next.delete(studentId); else next.add(studentId);
-      return next;
-    });
-  };
+  const [revealedIds, toggleReveal] = useRevealedSet();
 
   if (students.length === 0) return null;
 
@@ -111,7 +94,7 @@ export default function AtRiskStudentsCard({ students, thisAcademicYear, onViewS
         <div className="divide-y divide-line-soft">
           {filtered.map((s) => (
             <div key={s.studentId} className="flex flex-wrap items-center gap-3.5 py-3.5">
-              <div className={`flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[17px] font-display text-[19px] font-semibold ${SCORE_BOX_CLS[s.status.tone]}`}>
+              <div className={`flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[17px] font-display text-[19px] font-semibold ${TONE_CLS[s.status.tone]}`}>
                 {s.total}
               </div>
               <div className="flex-1 min-w-[150px]">
@@ -134,7 +117,7 @@ export default function AtRiskStudentsCard({ students, thisAcademicYear, onViewS
                   )}
                 </div>
                 <p className="mt-0.5 text-xs text-ink-mute">{s.count} รายการ</p>
-                <span className={`mt-1.5 inline-flex items-center rounded-full px-2.5 py-1 text-[11.5px] font-semibold ${ACTION_PILL_CLS[s.status.tone]}`}>
+                <span className={`mt-1.5 inline-flex items-center rounded-full px-2.5 py-1 text-[11.5px] font-semibold ${TONE_CLS[s.status.tone]}`}>
                   {s.status.action} ({s.status.ref})
                 </span>
               </div>

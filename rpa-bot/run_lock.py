@@ -12,10 +12,11 @@ run_lock.py — PIN ยืนยันตัวตนก่อน "รันจ�
 เจ้าของ ใครใช้ PIN ของตัวเองรันก็ได้โดยไม่ต้องรู้ PIN ของคนอื่น — verify_pin() คืน "ชื่อ" ของ PIN ที่ตรง
 กลับไป เอาไปบันทึกลงคอนโซล/ล็อกได้ว่าใครเป็นคนยืนยันรันรอบนั้น (ดู bot_gui.py._run_bot)
 
-ไม่เกี่ยวกับบัญชี EDMS/RMS เลย (คนละคีย์ในที่เก็บเดียวกัน) และไม่บังคับตั้ง — ถ้าไม่ตั้งเลยสักชุด ปุ่ม
-"รันจริง" ทำงานเหมือนเดิมทุกประการ และไม่กระทบการรันอัตโนมัติตามเวลา (schedule_logic.py) เพราะรอบนั้น
-ผู้ใช้ยืนยันไว้ล่วงหน้าแล้วตอนเปิดสวิตช์ "รันจริงอัตโนมัติตามเวลา" — ให้หยุดถามซ้ำทุกรอบจะทำให้ฟีเจอร์
-รันอัตโนมัติใช้งานไม่ได้จริง (ไม่มีคนนั่งรอกรอก PIN ตอนเที่ยงคืน)
+ไม่เกี่ยวกับบัญชี EDMS/RMS เลย (คนละคีย์ในที่เก็บเดียวกัน) — "ทดสอบ" ใช้งานได้เสมอไม่ว่าจะตั้ง PIN ไว้หรือไม่
+แต่ตั้งแต่คำขอผู้ใช้ 28/9/69 ปุ่ม "รันจริง" (กดเองหรือเปิดสวิตช์อัตโนมัติตามเวลา) ถูกบล็อกไว้เลยจนกว่าจะตั้ง
+PIN ไว้อย่างน้อย 1 ชุดก่อน (ดู bot_gui.py._run_bot/_on_schedule_toggle) — รอบรันอัตโนมัติแต่ละรอบเองไม่ถาม
+ซ้ำ เพราะยืนยันไว้ล่วงหน้าแล้วตอนเปิดสวิตช์นั้น (ให้หยุดถามซ้ำทุกรอบจะทำให้ฟีเจอร์รันอัตโนมัติใช้งานไม่ได้จริง
+— ไม่มีคนนั่งรอกรอก PIN ตอนเที่ยงคืน)
 
 เก็บเป็นแฮช PBKDF2-SHA256 + salt สุ่มต่อ "ชุด" ใน Windows Credential Manager (ที่เดียวกับรหัสผ่านอื่นของบอท)
 ไม่เก็บ PIN เป็นข้อความล้วน และเทียบผลแฮชแบบเวลาคงที่ (hmac.compare_digest) กันการโจมตีแบบ timing attack
@@ -24,6 +25,7 @@ import hashlib
 import hmac
 import json
 import os
+import time
 
 import keyring
 
@@ -36,6 +38,22 @@ MIN_PIN_LENGTH = 4
 MAX_PIN_LENGTH = 20
 MAX_NAME_LENGTH = 40
 MAX_PINS = 10  # กันเผลอเพิ่มไม่จำกัด — แผนกเล็กๆ ไม่น่าจะต้องมีเกินนี้จริง
+
+# 🔒 ล็อกชั่วคราวหลังกรอกผิดติดกันหลายครั้ง (ตรวจพบระหว่างตรวจสอบระบบ 28/9/69) — เดิม verify_pin() ไม่มี
+# การจำกัดจำนวนครั้งเลย ผสมกับ MIN_PIN_LENGTH ต่ำสุดแค่ 4 หลัก ทำให้คนที่เจอโปรแกรมเปิดค้างอยู่ลองผิดลองถูก
+# ได้ไม่จำกัดจนกว่าจะเดาถูก จำนวนนี้เก็บในหน่วยความจำของโปรเซสเท่านั้น (ไม่เขียนลงดิสก์) — ตั้งใจ: ปิดโปรแกรม
+# แล้วเปิดใหม่ก็รีเซ็ตตัวนับได้ เพราะการปิด-เปิดโปรแกรมเองก็เป็นอุปสรรคที่มีความหมายอยู่แล้วสำหรับภัยคุกคามที่
+# โมดูลนี้ตั้งใจกัน (คนที่บังเอิญมาเจอโปรแกรมเปิดค้างอยู่ ไม่ใช่ผู้โจมตีที่ตั้งใจ scripted brute-force)
+MAX_FAILED_ATTEMPTS = 5
+LOCKOUT_SECONDS = 30
+_lockout_state = {"failed_count": 0, "locked_until": 0.0}
+
+
+def seconds_until_unlock() -> float:
+    """คืนจำนวนวินาทีที่เหลือก่อนกรอก PIN ได้อีกครั้ง (0 ถ้าไม่ได้ถูกล็อกอยู่) — เรียกก่อนเปิดกล่องขอ PIN
+    เสมอ เพื่อบอกผู้ใช้ตรงๆ ว่าเหตุใดจึงยังกรอกไม่ได้ แทนที่จะให้เข้าใจผิดว่า PIN ผิดทุกครั้งที่ลอง"""
+    remaining = _lockout_state["locked_until"] - time.time()
+    return remaining if remaining > 0 else 0.0
 
 
 def _hash_pin(pin: str, salt: bytes) -> bytes:
@@ -143,7 +161,12 @@ def clear_all_pins() -> None:
 
 def verify_pin(pin: str):
     """คืน "ชื่อ" ของ PIN ชุดแรกที่ตรงกับที่กรอก (เอาไปบันทึกลงล็อกได้ว่าใครยืนยันรันรอบนั้น) หรือ None ถ้าไม่
-    ตรงชุดไหนเลย/ยังไม่เคยตั้ง PIN ไว้ — ทุกชุดเทียบแบบเวลาคงที่ (hmac.compare_digest) กัน timing attack"""
+    ตรงชุดไหนเลย/ยังไม่เคยตั้ง PIN ไว้/กำลังถูกล็อกชั่วคราวอยู่ (กรอกผิดติดกันเกิน MAX_FAILED_ATTEMPTS ครั้ง
+    — เรียก seconds_until_unlock() ก่อนเปิดกล่องขอ PIN เสมอเพื่อบอกผู้ใช้ตรงๆ) — ทุกชุดเทียบแบบเวลาคงที่
+    (hmac.compare_digest) กัน timing attack"""
+    if seconds_until_unlock() > 0:
+        return None
+
     pin = pin or ""
     matched = None
     for p in _load_pins():
@@ -155,4 +178,12 @@ def verify_pin(pin: str):
         actual = _hash_pin(pin, salt)
         if hmac.compare_digest(actual, expected) and matched is None:
             matched = p.get("name", "")
+
+    if matched is None:
+        _lockout_state["failed_count"] += 1
+        if _lockout_state["failed_count"] >= MAX_FAILED_ATTEMPTS:
+            _lockout_state["locked_until"] = time.time() + LOCKOUT_SECONDS
+            _lockout_state["failed_count"] = 0
+    else:
+        _lockout_state["failed_count"] = 0
     return matched

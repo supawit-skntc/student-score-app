@@ -83,7 +83,7 @@ function normalizeRecordInput_(data, session, existingTeacherName) {
   }
 
   const studentId = str(data.studentId);
-  if (!/^[0-9A-Za-z-]{4,20}$/.test(studentId)) return fail('รหัสนักเรียนไม่ถูกต้อง (ใช้ตัวเลข/ตัวอักษรอังกฤษ 4-20 ตัว)');
+  if (!isValidStudentId_(studentId)) return fail('รหัสนักเรียนไม่ถูกต้อง (ใช้ตัวเลข/ตัวอักษรอังกฤษ 4-20 ตัว)');
 
   const studentName = str(data.studentName);
   if (!studentName) return fail('กรุณาระบุชื่อ-นามสกุล');

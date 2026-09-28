@@ -308,6 +308,39 @@ if (require.main === module) {
     t('single-session: the other account\'s own new session also works', call(a6, { action: 'getMyRecords', token: otherUserToken }).status === 'success');
   }
 
+  // ---- L2. เพดาน rate limit คีย์ด้วยชื่อผู้ใช้ ไม่ใช่ token — ล็อกอินใหม่ต้องไม่รีเซ็ตโควตา (ตรวจพบระหว่างตรวจสอบระบบ 28/9/69)
+  {
+    const e7 = fixture(); const a7 = build(e7);
+    let tok = login(a7, 'teacher1', 'TeacherPass1').token;
+    let lastRes;
+    for (let i = 0; i < 120; i++) lastRes = call(a7, { action: 'getMyRecords', token: tok });
+    t('rate limit: 120 requests within the window all succeed', lastRes.status === 'success');
+    const over = call(a7, { action: 'getMyRecords', token: tok });
+    t('rate limit: the 121st request in the same window is rejected', over.status === 'error' && /ถี่เกินไป/.test(over.message));
+    tok = login(a7, 'teacher1', 'TeacherPass1').token; // token ใหม่ (เตะ token เดิมทิ้งด้วย — ดูบล็อก single-session ด้านบน)
+    const afterRelogin = call(a7, { action: 'getMyRecords', token: tok });
+    t('rate limit: re-logging in for a fresh token does NOT reset the quota (was exploitable before this fix)',
+      afterRelogin.status === 'error' && /ถี่เกินไป/.test(afterRelogin.message));
+  }
+
+  // ---- L3. generateRecordPdf ต้องเช็กสิทธิ์มองเห็นก่อนเสมอ (ช่องโหว่ที่พบระหว่างตรวจสอบระบบ 28/9/69 — เดิมไม่เช็กเลย)
+  {
+    const e8 = fixture(); const a8 = build(e8);
+    const A8 = login(a8, 'admin', 'AdminPass1').token;
+    const T1z = login(a8, 'teacher1', 'TeacherPass1').token;
+    const T2z = login(a8, 'teacher2', 'TeacherPass2').token;
+    const rec = call(a8, { action: 'addRecord', token: T1z, data: validRecord({ studentId: '69219000301', fieldOfStudy: 'การบัญชี', clientRequestId: crypto.randomUUID() }) });
+    t('setup: record created', rec.status === 'success');
+    const deniedForOther = call(a8, { action: 'generateRecordPdf', token: T2z, id: rec.id });
+    t('generateRecordPdf: unrelated teacher (no majors, not the owner) is denied', deniedForOther.status === 'error' && /สิทธิ์/.test(deniedForOther.message));
+    const okForOwner = call(a8, { action: 'generateRecordPdf', token: T1z, id: rec.id });
+    t('generateRecordPdf: the owning teacher can generate it', okForOwner.status === 'success');
+    // ล้าง URL ที่เพิ่งเขียนไว้ (เช็ก idempotent เดิมจะคืน "มีอยู่แล้ว" ทันทีถ้าไม่ล้างก่อน) เพื่อทดสอบแอดมินแยกรอบ
+    e8.sheets.Records.rows[e8.sheets.Records.rows.length - 1][13] = '';
+    const okForAdmin = call(a8, { action: 'generateRecordPdf', token: A8, id: rec.id });
+    t('generateRecordPdf: admin (full visibility) can generate any record', okForAdmin.status === 'success');
+  }
+
   // ---- M. อัปเกรดแฮชบัญชีเก่า (ไม่มี salt) ตอนเข้าสู่ระบบ
   {
     const e2 = fixture(); const a2 = build(e2);

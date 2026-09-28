@@ -1,19 +1,13 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Users, Eye, EyeOff } from 'lucide-react';
 import EmptyRow from '../ui/EmptyRow';
 import { maskThaiName } from '../../utils/privacy';
+import { useRevealedSet } from '../../hooks/useRevealedSet';
 
 export default function TopStudentsCard({ topStudents, thisAcademicYear, onViewStudent }) {
   // ปิดบังชื่อทีละแถวแทนสวิตช์รวมหน้าเดียว (ฟีดแบ็กผู้ใช้ 28/9/69) — ซ่อนไว้ก่อนเสมอทุกครั้งที่
   // เปิดหน้านี้ใหม่ (ไม่จำข้ามหน้า) เหมือนตัวเดิม แค่ย้ายปุ่มดวงตาไปติดท้ายชื่อแต่ละคนแทน
-  const [revealedIds, setRevealedIds] = useState(() => new Set());
-  const toggleReveal = (studentId) => {
-    setRevealedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(studentId)) next.delete(studentId); else next.add(studentId);
-      return next;
-    });
-  };
+  const [revealedIds, toggleReveal] = useRevealedSet();
 
   return (
     <div className="bg-white p-[18px] rounded-[20px] border border-line">

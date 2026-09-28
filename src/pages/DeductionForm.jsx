@@ -5,6 +5,7 @@ import { callAPI } from '../services/api';
 import { CACHED_OFFENSES, fetchOffenses, findOffense, OTHER_OFFENSE_POINTS } from '../data/offenses';
 import { resizeImageForOcr, parseOcrCardData, MAJORS_BY_LEVEL } from '../utils/ocr';
 import { todayLocalISO } from '../utils/date';
+import { chipToneCls } from '../utils/chipStyle';
 import ThaiDateInput from '../components/ui/ThaiDateInput';
 
 const TITLE_OPTIONS = ['นาย', 'นาง', 'นางสาว'];
@@ -155,6 +156,14 @@ export default function DeductionForm() {
     e.preventDefault();
     setIsSubmitting(true);
 
+    // กันกรณีชิปฐานความผิดยังโหลดไม่เสร็จ (เบราว์เซอร์ใหม่ที่ยังไม่มีแคชใน localStorage) แล้วครูรีบกด
+    // บันทึกไปก่อนที่ offense จะมีค่าเลย — เดิมไม่เช็กจุดนี้ จะปล่อยให้ backend ปฏิเสธแทน (error งงๆ)
+    if (!formData.offense) {
+      Swal.fire('แจ้งเตือน', 'กรุณาเลือกฐานความผิด', 'warning');
+      setIsSubmitting(false);
+      return;
+    }
+
     // จัดการข้อความฐานความผิดกรณีเลือก "อื่นๆ"
     let finalOffense = formData.offense;
     if (formData.offense === 'อื่นๆ') {
@@ -295,7 +304,7 @@ export default function DeductionForm() {
                       type="button"
                       onClick={() => setField('nameTitle', t)}
                       className={`min-h-11 rounded-[14px] px-4 text-[13.5px] font-semibold border-[1.5px] transition-colors
-                        ${active ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-[#EADFDF] bg-white text-ink-soft hover:bg-line-soft'}`}
+                        ${chipToneCls(active)}`}
                     >
                       {t}
                     </button>
@@ -335,7 +344,7 @@ export default function DeductionForm() {
                       type="button"
                       onClick={() => setField('fieldOfStudy', m)}
                       className={`min-h-11 rounded-[14px] px-3.5 text-[13.5px] font-semibold border-[1.5px] transition-colors
-                        ${active ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-[#EADFDF] bg-white text-ink-soft hover:bg-line-soft'}`}
+                        ${chipToneCls(active)}`}
                     >
                       {m}
                     </button>
@@ -358,6 +367,11 @@ export default function DeductionForm() {
           <div className="flex flex-col gap-4">
             <div>
               <label className={labelCls}>ฐานความผิด</label>
+              {offenses.length === 0 && (
+                <p className="mb-2 flex items-center gap-1.5 text-[12.5px] text-ink-faint">
+                  <Loader2 size={13} className="animate-spin" /> กำลังโหลดรายการฐานความผิด...
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 {offenses.map((o) => {
                   const active = formData.offense === o.label;
@@ -367,7 +381,7 @@ export default function DeductionForm() {
                       type="button"
                       onClick={() => handleOffenseChange(o.label)}
                       className={`inline-flex items-center gap-1.5 min-h-11 rounded-[14px] px-3.5 text-[13.5px] font-semibold border-[1.5px] transition-colors
-                        ${active ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-[#EADFDF] bg-white text-ink-soft hover:bg-line-soft'}`}
+                        ${chipToneCls(active)}`}
                     >
                       {o.label}
                       <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[11.5px] font-bold ${active ? 'bg-brand-600 text-white' : 'bg-line-soft text-ink-mute'}`}>

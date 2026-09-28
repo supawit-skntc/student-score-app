@@ -393,6 +393,9 @@ class BotControlPanel(ctk.CTk):
                 "ต้องตั้ง PIN อย่างน้อย 1 ชุดก่อนถึงจะเปิดให้บอทรันจริงอัตโนมัติตามเวลาได้ — ตั้งได้ที่หัวข้อ \"PIN ป้องกันการรันจริง\" ด้านบน",
             )
             return
+        if self._warn_if_pin_locked_out():
+            self.schedule_switch.deselect()
+            return
 
         pin = self._prompt_pin_dialog(
             "ยืนยันก่อนเปิดรันอัตโนมัติ",
@@ -659,6 +662,19 @@ class BotControlPanel(ctk.CTk):
                 command=lambda n=name: self._on_remove_pin(n),
             ).pack(side="right", padx=(0, 8), pady=6)
 
+    def _warn_if_pin_locked_out(self):
+        """ถ้ากรอก PIN ผิดติดกันเกิน run_lock.MAX_FAILED_ATTEMPTS ครั้งเมื่อไม่นานนี้ จะถูกล็อกชั่วคราว (ดู
+        run_lock.py) — เรียกก่อนเปิดกล่องขอ PIN ทุกจุดเสมอ แจ้งเวลาที่เหลือตรงๆ แทนที่จะให้กรอกแล้วเจอ
+        "PIN ไม่ถูกต้อง" ซ้ำๆ ทั้งที่พิมพ์ถูกแล้ว (สับสน) คืน True ถ้ากำลังถูกล็อกอยู่ (ผู้เรียกต้องหยุดทันที)"""
+        remaining = run_lock.seconds_until_unlock()
+        if remaining <= 0:
+            return False
+        messagebox.showwarning(
+            "รอสักครู่",
+            f"กรอก PIN ผิดหลายครั้งเกินไป กรุณารออีกประมาณ {int(remaining) + 1} วินาทีแล้วลองใหม่",
+        )
+        return True
+
     def _confirm_current_pin(self, title):
         """ถ้าตั้ง PIN ไว้แล้วอย่างน้อย 1 ชุด ต้องกรอก PIN ที่ตรงชุดใดชุดหนึ่งให้ถูกก่อนเสมอถึงจะเพิ่ม/ลบชุดใดๆ
         ได้ — ไม่งั้นใครก็ตามที่มาเจอโปรแกรมเปิดค้างอยู่ (ภัยคุกคามเดียวกับที่ PIN นี้ตั้งใจกันตั้งแต่แรก) จะกด
@@ -666,6 +682,8 @@ class BotControlPanel(ctk.CTk):
         คืน True ถ้ายังไม่เคยตั้ง PIN ไว้เลยสักชุด (ไม่มีอะไรให้ยืนยัน — ตั้งชุดแรกได้ทันที) หรือกรอก PIN ที่มีอยู่ถูกต้อง"""
         if not run_lock.has_pin():
             return True
+        if self._warn_if_pin_locked_out():
+            return False
         current = self._prompt_pin_dialog(title, "กรอก PIN ที่มีอยู่ชุดใดชุดหนึ่งก่อนเพื่อยืนยันตัวตน")
         if current is None:
             return False
@@ -1041,14 +1059,18 @@ class BotControlPanel(ctk.CTk):
     def _parse_progress(self, line):
         # อ่านความคืบหน้าจากข้อความที่ main.py พิมพ์ออกมาอยู่แล้ว (ไม่ได้แก้ main.py
         # เลย) เพื่อขับ progress bar — "พบ N รายการรอดำเนินการ" ตั้งค่ารวม แล้วนับ
-        # จำนวนครั้งที่เจอ "--- กำลังประมวลผล ..." เพิ่มทีละ 1
+        # จำนวนครั้งที่เจอ "--- ประมวลผลเสร็จ ..." เพิ่มทีละ 1
+        # 🐛 เดิม regex หา "กำลังประมวลผล" (กำลังทำ) แต่ main.py พิมพ์ "ประมวลผลเสร็จ" (ทำเสร็จแล้ว) จริง —
+        # ข้อความเปลี่ยนไปตอน commit 0241905 แต่ regex นี้ (เพิ่มทีหลังใน 79a56d2) ไม่เคยตามให้ตรง ทำให้ไม่
+        # match อะไรเลยทั้งการรัน แถบความคืบหน้าเลยค้างที่ 0% ตลอดแม้บอทจะทำงานถูกต้องอยู่จริง (ผู้ใช้ที่ดู
+        # การรันอัตโนมัติแบบไม่ได้เฝ้าจออาจเข้าใจผิดว่าบอทค้าง)
         match_total = re.search(r"พบ\s+(\d+)\s+รายการรอดำเนินการ", line)
         if match_total:
             self.total_count = int(match_total.group(1))
             self.done_count = 0
             self._update_progress()
             return
-        if re.search(r"---\s*กำลังประมวลผล", line):
+        if re.search(r"---\s*ประมวลผลเสร็จ", line):
             self.done_count += 1
             self._update_progress()
 
@@ -1103,6 +1125,8 @@ class BotControlPanel(ctk.CTk):
         # ยืนยัน PIN ก่อนรันจริงด้วยมือ (กรอกชุดใดก็ได้ที่ตรงกับที่ตั้งไว้) — ไม่ถามตอนรันอัตโนมัติตามเวลา
         # (auto=True) เพราะผู้ใช้ยืนยันไว้ล่วงหน้าแล้วตอนเปิดสวิตช์ในขั้นตอนที่ 2 (ซึ่งก็ต้องมี PIN ก่อนเช่นกัน)
         if not dry_run and not auto:
+            if self._warn_if_pin_locked_out():
+                return
             pin = self._prompt_pin_dialog(
                 "ยืนยันก่อนรันจริง",
                 "กรอก PIN ที่ตรงชุดใดชุดหนึ่งเพื่อยืนยันก่อนบันทึกข้อมูลลงระบบ RMS จริง",

@@ -16,6 +16,7 @@ import keyring
 import logging
 import re
 import time
+from urllib.parse import urlparse, parse_qs
 from playwright.sync_api import sync_playwright, Page, TimeoutError as PlaywrightTimeout
 
 from offense_mapping import get_offense_entry, INCOR_GROUP_ID_BEHAVIOR
@@ -87,12 +88,26 @@ def search_student(page: Page, student_id: str) -> bool:
     page.click('button:has-text("เลือก / ค้นหา"), input[value*="เลือก"]')
     page.wait_for_load_state("networkidle")
 
-    student_link = page.locator(f'a.users-list-name[href*="student_id={student_id}"]')
-    if student_link.count() == 0:
+    # 🔒 เดิมเอา student_id (ข้อมูลจากชีตที่ไม่ได้ผ่านการกรองอักขระพิเศษ) ไปต่อเป็น CSS attribute
+    # selector ตรงๆ (`[href*="student_id={student_id}"]`) — ถ้าค่ามีอักขระ " หรือ ] แทรกอยู่ จะทำให้
+    # selector หลุดขอบเขตที่ตั้งใจ (เช่น [href*=""] ซึ่ง match ลิงก์ "ทุกคน") เสี่ยงให้บอทคลิกเข้าไปบันทึก
+    # ประวัติลงนักเรียน "ผิดคน" แบบเงียบๆ ไม่มี error เตือน — ดึงลิงก์ทั้งหมดมาเทียบค่า student_id จริง
+    # จาก query string ของ href ในฝั่ง Python แทน (เทียบตรงเป๊ะ ไม่ใช่ substring กันรหัสที่เป็นส่วนย่อย
+    # ของกันและกันจับคู่ผิดด้วย)
+    links = page.locator("a.users-list-name")
+    target = None
+    for i in range(links.count()):
+        href = links.nth(i).get_attribute("href") or ""
+        qs = parse_qs(urlparse(href).query)
+        if qs.get("student_id", [None])[0] == student_id:
+            target = links.nth(i)
+            break
+
+    if target is None:
         log.warning("ไม่พบนักเรียนรหัส %s ในระบบ RMS", student_id)
         return False
 
-    student_link.first.click()
+    target.click()
     page.wait_for_load_state("networkidle")
     return True
 

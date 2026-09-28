@@ -7,6 +7,9 @@ import { academicYearOf, currentAcademicYear } from '../data/academicYear';
 import { isAdmin, canViewAllRecords } from '../utils/permissions';
 import { parsePoints } from '../utils/points';
 import { escapeHtml } from '../utils/html';
+import { TONE_CLS } from '../data/tone';
+import { chipToneCls } from '../utils/chipStyle';
+import { SYNC_STATUS_MAP } from '../data/syncStatus';
 import ProbationModal from '../components/ProbationModal';
 
 // จำกัดจำนวนชิปที่แสดงพร้อมกัน — ถ้าโรงเรียนมีนักเรียนโดนตัดคะแนนหลายร้อยคน
@@ -14,15 +17,9 @@ import ProbationModal from '../components/ProbationModal';
 // ให้ครูพิมพ์ค้นหาให้เจาะจงขึ้นแทน
 const MAX_CHIP_RESULTS = 20;
 
-// ไล่สีตามความรุนแรง (จำนวนครั้งที่ทำทัณฑ์บน) แบบเดียวกับ SCORE_BOX_CLS ใน
-// AtRiskStudentsCard.jsx — คนละที่กันแต่หลักการเดียวกัน: ทำให้การ์ดนี้ "อ่านได้
-// ทันที" โดยไม่ต้องนับตัวเลขทีละคน 1 ครั้งยังถือว่าเบา ให้โทนกลาง ส่วน 3 ครั้งขึ้น
+// ไล่สีตามความรุนแรง (จำนวนครั้งที่ทำทัณฑ์บน) ด้วย TONE_CLS ที่ใช้ร่วมกันทั้งแอป (src/data/tone.js) —
+// ทำให้การ์ดนี้ "อ่านได้ทันที" โดยไม่ต้องนับตัวเลขทีละคน 1 ครั้งยังถือว่าเบา ให้โทนกลาง ส่วน 3 ครั้งขึ้น
 // ไปถือว่าน่าห่วงมากแล้วให้โทนแดงเข้มสุด
-const PROBATION_TONE_CLS = {
-  notice: 'bg-gold-50 text-gold-700',
-  warn: 'bg-warn-bg text-warn-fg',
-  critical: 'bg-bad-bg text-bad-fg',
-};
 function probationTone(count) {
   if (count >= 3) return 'critical';
   if (count === 2) return 'warn';
@@ -350,6 +347,7 @@ export default function StudentProfile({ initialStudentId }) {
           <input
             type="text"
             placeholder="ค้นหารหัสหรือชื่อนักเรียน..."
+            aria-label="ค้นหารหัสหรือชื่อนักเรียน"
             className="w-full min-h-12 pl-[42px] pr-4 border-[1.5px] border-[#E3D9DA] rounded-[14px] focus:border-brand-500 outline-none transition text-[16px]"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -369,9 +367,7 @@ export default function StudentProfile({ initialStudentId }) {
                   <button
                     key={s.studentId}
                     onClick={() => setSelectedId(s.studentId)}
-                    className={`inline-flex items-center gap-2 min-h-11 rounded-[14px] pl-3.5 pr-2 text-[13.5px] font-semibold border-[1.5px] transition-colors ${
-                      active ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-[#EADFDF] bg-white text-ink-soft hover:bg-line-soft'
-                    }`}
+                    className={`inline-flex items-center gap-2 min-h-11 rounded-[14px] pl-3.5 pr-2 text-[13.5px] font-semibold border-[1.5px] transition-colors ${chipToneCls(active)}`}
                   >
                     {s.name}
                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11.5px] font-bold ${active ? 'bg-brand-600 text-white' : 'bg-line-soft text-ink-mute'}`}>
@@ -438,7 +434,7 @@ export default function StudentProfile({ initialStudentId }) {
                               <p className="text-[13.5px] font-semibold text-ink truncate">{s.name}</p>
                               <p className="mt-0.5 text-[11.5px] text-ink-mute">{s.studentId}</p>
                             </div>
-                            <span className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-bold ${PROBATION_TONE_CLS[tone]}`}>
+                            <span className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-bold ${TONE_CLS[tone]}`}>
                               <ShieldAlert size={11} /> {count} ครั้ง
                             </span>
                           </button>
@@ -588,6 +584,11 @@ export default function StudentProfile({ initialStudentId }) {
                         <div className="min-w-0">
                           <p className="truncate text-[14px] font-semibold text-ink">{r.offense}</p>
                           <p className="mt-0.5 text-xs text-ink-mute">{r.displayDate} · บันทึกโดย {r.teacherName}</p>
+                          {SYNC_STATUS_MAP[r.rmsSyncStatus] && (
+                            <span className={`mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${SYNC_STATUS_MAP[r.rmsSyncStatus].cls}`}>
+                              {SYNC_STATUS_MAP[r.rmsSyncStatus].label}
+                            </span>
+                          )}
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
                           <span className="inline-flex items-center rounded-full bg-bad-bg px-2.5 py-0.5 text-[13px] font-bold text-bad-fg">

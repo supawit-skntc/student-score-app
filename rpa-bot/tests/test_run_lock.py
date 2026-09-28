@@ -126,6 +126,24 @@ t("migrated legacy pin still verifies with its original value", run_lock.verify_
 t("legacy key removed after a successful migration", fake.store.get((run_lock.SERVICE, run_lock.LEGACY_PIN_KEY)) is None)
 run_lock.clear_all_pins()
 
+# ---------------------------------------------------------------- ล็อกชั่วคราวหลังกรอกผิดติดกันหลายครั้ง (28/9/69)
+run_lock._lockout_state["failed_count"] = 0
+run_lock._lockout_state["locked_until"] = 0.0
+run_lock.add_pin("ครูเอ", "13579")
+t("seconds_until_unlock is 0 before any failed attempts", run_lock.seconds_until_unlock() == 0)
+for _ in range(run_lock.MAX_FAILED_ATTEMPTS - 1):
+    run_lock.verify_pin("wrong")
+t(f"not locked out yet after {run_lock.MAX_FAILED_ATTEMPTS - 1} wrong attempts", run_lock.seconds_until_unlock() == 0)
+run_lock.verify_pin("wrong")  # ครั้งที่ MAX_FAILED_ATTEMPTS พอดี ทำให้ถูกล็อก
+t("locked out after MAX_FAILED_ATTEMPTS consecutive wrong attempts", run_lock.seconds_until_unlock() > 0)
+t("verify_pin returns None while locked out even with the CORRECT pin", run_lock.verify_pin("13579") is None)
+run_lock._lockout_state["locked_until"] = 0.0  # จำลองเวลาผ่านไปแล้ว (ทดสอบจริงไม่ต้องรอ 30 วิ)
+t("verify_pin works again once the lockout window has passed", run_lock.verify_pin("13579") == "ครูเอ")
+t("a successful verify resets the failed-attempt counter", run_lock._lockout_state["failed_count"] == 0)
+run_lock.clear_all_pins()
+run_lock._lockout_state["failed_count"] = 0
+run_lock._lockout_state["locked_until"] = 0.0
+
 # ข้อมูลเสีย/แปลกในที่เก็บต้องไม่ทำให้พัง (แค่ปฏิเสธ)
 fake.store[(run_lock.SERVICE, run_lock.PINS_KEY)] = "not-json-at-all"
 t("malformed stored value -> list_pins empty, no crash", run_lock.list_pins() == [])

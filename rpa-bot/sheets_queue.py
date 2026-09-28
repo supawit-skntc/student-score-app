@@ -18,7 +18,10 @@ import requests
 
 from app_paths import app_dir
 
-DEFAULT_GAS_API_URL = "https://script.google.com/macros/s/AKfycbwqMhIeP2tududDafvKPOwpZ0m3mizqX06hR3XH-TllCWkJUdLQoxY9vNsiBWigtfC5/exec"
+DEFAULT_GAS_API_URL = "https://script.google.com/macros/s/AKfycbwIRY2_TABc-TpbBs2eFHKBQexG8GR0EeJ2VOcLeDKHnaNX8EtFOIcoIAcn7OF3X_MZ/exec"
+
+# ทุก override ต้องขึ้นต้นด้วยนี้เสมอ (ดูเหตุผลที่ _load_gas_url ด้านล่าง)
+GAS_URL_PREFIX = "https://script.google.com/macros/s/"
 
 
 def _load_gas_url() -> str:
@@ -28,20 +31,35 @@ def _load_gas_url() -> str:
     ทำไมไม่ฝังในโค้ดอย่างเดียว: ตอนแจกเป็นไฟล์ .exe ค่าที่ฝังไว้จะถูกแช่แข็งตอน build
     ทุกครั้งที่ deploy Apps Script ใหม่แล้วได้ URL ใหม่ (เกิดบ่อย) จะต้อง build โปรแกรม
     ใหม่แจกทุกเครื่อง — ตอนนี้แก้แค่ config.json ด้วย Notepad ก็พอ ไม่ต้อง build ใหม่
+
+    🔒 ทั้งสอง override ต้องขึ้นต้นด้วย GAS_URL_PREFIX เสมอ (ตรวจพบระหว่างตรวจสอบระบบ 28/9/69) — เดิมรับค่า
+    อะไรก็ได้จาก config.json แบบไม่ตรวจสอบเลย ใครก็ตามที่เขียนไฟล์ในโฟลเดอร์โปรแกรมได้ (ภัยคุกคามเดียวกับที่
+    ระบบ PIN ตั้งใจกันไว้ — โฟลเดอร์นี้ตั้งใจให้ก็อปวางที่ไหนก็ได้ ไม่ได้ล็อกสิทธิ์เขียนไว้) แก้ config.json
+    เป็นข้อความล้วนให้ชี้ไป URL อื่นได้ แล้วรอบถัดไปที่บอทล็อกอิน (_ensure_login ด้านล่าง) รหัสผ่านบัญชี EDMS
+    จริงจะถูกส่งไปเซิร์ฟเวอร์ปลอมนั้นทันทีโดยไม่ต้องเปิดหน้าต่างโปรแกรมหรือรู้ PIN เลยด้วยซ้ำ
     """
+    log = logging.getLogger("sheets_queue")
     env_url = os.environ.get("RMS_BOT_GAS_URL", "").strip()
     if env_url:
-        return env_url
+        if env_url.startswith(GAS_URL_PREFIX):
+            return env_url
+        log.warning("RMS_BOT_GAS_URL ไม่ใช่ URL ของ Apps Script ที่ถูกต้อง (ต้องขึ้นต้นด้วย %s) — ใช้ URL ค่าเริ่มต้นในโค้ดแทน", GAS_URL_PREFIX)
     path = os.path.join(app_dir(), "config.json")
     try:
         with open(path, "r", encoding="utf-8") as f:
             url = str(json.load(f).get("gas_api_url", "")).strip()
         if url:
-            return url
+            if url.startswith(GAS_URL_PREFIX):
+                return url
+            log.warning(
+                "gas_api_url ใน config.json ไม่ใช่ URL ของ Apps Script ที่ถูกต้อง (ต้องขึ้นต้นด้วย %s) — "
+                "ใช้ URL ค่าเริ่มต้นในโค้ดแทน (ป้องกันไม่ให้ไฟล์นี้ถูกแก้ชี้ไปเซิร์ฟเวอร์อื่นแล้วขโมยรหัสผ่าน EDMS)",
+                GAS_URL_PREFIX,
+            )
     except FileNotFoundError:
         pass
     except (OSError, ValueError) as e:
-        logging.getLogger("sheets_queue").warning("อ่าน config.json ไม่สำเร็จ (%s) — ใช้ URL ค่าเริ่มต้นในโค้ดแทน", e)
+        log.warning("อ่าน config.json ไม่สำเร็จ (%s) — ใช้ URL ค่าเริ่มต้นในโค้ดแทน", e)
     return DEFAULT_GAS_API_URL
 
 

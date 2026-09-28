@@ -27,12 +27,6 @@ export function canViewAllRecords(user) {
   return !!user && (user.roleTier === 'admin' || user.roleTier === 'full');
 }
 
-export function roleTierLabel(user) {
-  if (isAdmin(user)) return 'ผู้ดูแลระบบ';
-  if (canViewAllRecords(user)) return 'เห็นทุกรายการ';
-  return 'ผู้ใช้งานทั่วไป';
-}
-
 // รายการบทบาทให้เลือกตอนสร้าง/แก้ไขผู้ใช้งาน — ค่า role จริงที่เก็บในชีต Users
 // (คนละเรื่องกับ roleTier ด้านบน) ไม่รวม 'Admin' และ 'บุคลากรงานปกครอง' (ค่าเก่า
 // เก็บไว้แค่ให้บัญชีเดิมยังใช้งานได้ ไม่ให้เลือกซ้ำอีกต่อไป) และไม่รวม 'ครูที่

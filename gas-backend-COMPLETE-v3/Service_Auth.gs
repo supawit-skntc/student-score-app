@@ -38,7 +38,7 @@ function handleLogin(username, password) {
     if (rowUser !== String(username).trim()) continue;
 
     const inputHash = hashPassword(String(password).trim(), rowSalt || undefined);
-    if (rowPassHash === inputHash) {
+    if (timingSafeEqual_(rowPassHash, inputHash)) {
       // 🧂 บัญชีเก่าที่ยังไม่มี salt (เก็บเป็น SHA-256 ล้วน ซึ่งค้นหารหัสผ่านยอดฮิตจากค่าแฮชได้ทันที) — ผู้ใช้เข้าสู่ระบบสำเร็จ
       // แล้วแปลว่ารู้รหัสผ่านจริง จึงเปลี่ยนเป็นแบบมี salt ให้เงียบๆ ตรงนี้เลย ไม่ต้องรอให้ผู้ดูแลรีเซ็ตรหัสผ่านให้ทีละคน
       if (!rowSalt) upgradeLegacyPasswordHash_(sheet, i + 1, data[i], String(password).trim());

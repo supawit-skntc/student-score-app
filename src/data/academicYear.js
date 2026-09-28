@@ -31,11 +31,6 @@ export function academicTermOf(isoDate) {
   return (m >= 5 && m <= 9) ? 1 : 2;
 }
 
-export function currentAcademicTerm() {
-  const d = new Date();
-  return academicTermOf(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`);
-}
-
 // ป้ายชื่อเทอมพร้อมปีการศึกษา เช่น "เทอม 1/2569" — ใช้แสดงผล/ตั้งชื่อช่วงเวลา
 // เท่านั้น ไม่ใช่ตัวเลขคะแนนสะสม (ดูคำเตือนด้านบน)
 export function termLabel(isoDate) {
