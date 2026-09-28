@@ -4,7 +4,6 @@ import Swal from 'sweetalert2';
 import { callAPI } from '../services/api';
 import { CACHED_OFFENSES, fetchOffenses, findOffense, OTHER_OFFENSE_POINTS } from '../data/offenses';
 import { isAdmin, canViewAllRecords } from '../utils/permissions';
-import ScopeNotice from '../components/ui/ScopeNotice';
 import { currentAcademicYear } from '../data/academicYear';
 import { downloadCsv } from '../utils/csv';
 import { todayLocalISO } from '../utils/date';
@@ -387,8 +386,6 @@ export default function Report({ onViewStudent }) {
 
   return (
     <div className="flex flex-col gap-4">
-
-      <ScopeNotice user={currentUser} />
 
       {/* --- Search + filters card --- */}
       <div className="bg-white p-4 rounded-[20px] border border-line">

@@ -5,7 +5,6 @@ import { callAPI } from '../services/api';
 import { statusForPoints } from '../data/thresholds';
 import { currentAcademicYear, currentTermLabel } from '../data/academicYear';
 import { isAdmin, canViewAllRecords } from '../utils/permissions';
-import ScopeNotice from '../components/ui/ScopeNotice';
 import { parsePoints, currentYearStudentTotals } from '../utils/points';
 import SummaryCard from '../components/ui/SummaryCard';
 import AtRiskStudentsCard from '../components/dashboard/AtRiskStudentsCard';
@@ -193,8 +192,6 @@ export default function Dashboard({ onViewStudent }) {
 
   return (
     <div className="flex flex-col gap-[18px]">
-
-      <ScopeNotice user={currentUser} />
 
       {/* --- Summary strip --- */}
       <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
