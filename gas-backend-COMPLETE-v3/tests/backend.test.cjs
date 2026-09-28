@@ -294,6 +294,20 @@ if (require.main === module) {
   t('backup CSV neutralises formulas but keeps numbers', csv === `"a","'=SUM(1)","-5","'+cmd","'@x","ปกติ","'-abc","12.5","ตัว""อัญ"`, csv);
 
 
+  // ---- L. 1 บัญชี ใช้พร้อมกันได้ทีละ 1 เครื่อง (คำขอผู้ใช้ 28/9/69) — ล็อกอินซ้ำต้องเตะเซสชันเก่าทิ้งทันที
+  {
+    const e6 = fixture(); const a6 = build(e6);
+    const first = login(a6, 'teacher1', 'TeacherPass1').token;
+    t('single-session: first login works', call(a6, { action: 'getMyRecords', token: first }).status === 'success');
+    const second = login(a6, 'teacher1', 'TeacherPass1').token;
+    t('single-session: second login (same account, another device) succeeds with a different token', !!second && second !== first);
+    t('single-session: the first token is revoked immediately (no grace window)', call(a6, { action: 'getMyRecords', token: first }).status === 'error');
+    t('single-session: the second (newest) token still works right after revoking the first', call(a6, { action: 'getMyRecords', token: second }).status === 'success');
+    const otherUserToken = login(a6, 'teacher2', 'TeacherPass2').token;
+    t('single-session: logging in as a different account does not revoke an unrelated session', call(a6, { action: 'getMyRecords', token: second }).status === 'success');
+    t('single-session: the other account\'s own new session also works', call(a6, { action: 'getMyRecords', token: otherUserToken }).status === 'success');
+  }
+
   // ---- M. อัปเกรดแฮชบัญชีเก่า (ไม่มี salt) ตอนเข้าสู่ระบบ
   {
     const e2 = fixture(); const a2 = build(e2);

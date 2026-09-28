@@ -18,7 +18,7 @@ import requests
 
 from app_paths import app_dir
 
-DEFAULT_GAS_API_URL = "https://script.google.com/macros/s/AKfycbxbvPFJvst_yjkj1r45P_UF47opLl2VCnK4OL3HOxi4Z4OYxGXS1ZRIDHkfegu3icY/exec"
+DEFAULT_GAS_API_URL = "https://script.google.com/macros/s/AKfycbwqMhIeP2tududDafvKPOwpZ0m3mizqX06hR3XH-TllCWkJUdLQoxY9vNsiBWigtfC5/exec"
 
 
 def _load_gas_url() -> str:

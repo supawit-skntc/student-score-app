@@ -275,6 +275,19 @@ function revokeUserSessions_(username) {
   CacheService.getScriptCache().put('user_rev_' + String(username).trim(), String(Date.now()), SESSION_TTL_SECONDS);
 }
 
+// 🔒 1 บัญชี ใช้งานพร้อมกันได้ทีละ 1 เครื่องเท่านั้น (คำขอผู้ใช้ 28/9/69) — เรียกทันทีหลัง createSession()
+// สำเร็จตอนล็อกอิน (ดู handleLogin ใน Service_Auth.gs) บันทึก token ล่าสุดที่ "ใช้งานได้จริง" ของบัญชีนี้ไว้
+// ต่อชื่อผู้ใช้ ให้ getSession() เทียบ token ตรงตัวทุกครั้ง — เครื่อง/แท็บอื่นที่ถือ token เก่าของบัญชีเดียวกัน
+// จะถูกปฏิเสธทันทีในคำขอถัดไป ไม่ต้องรอหมดอายุ 6 ชั่วโมงเอง
+//
+// ทำไมไม่ใช้เวลา (แบบ revokeUserSessions_ ด้านบน): ถ้าล็อกอิน 2 ครั้งติดกันเร็วมาก (เช่นดับเบิลคลิกปุ่มเข้าสู่
+// ระบบ หรือแค่เรียก Date.now() สองครั้งในสคริปต์เดียวกันซึ่งเร็วกว่า 1 มิลลิวินาที) อาจได้ค่าเวลาซ้ำกันเป๊ะ ทำให้
+// การเทียบ "iat <= เวลายกเลิก" ไม่ยกเลิก token เก่าจริง (ผลลัพธ์ผิดเงียบๆ ไม่มี error ให้เห็น) — เทียบ token
+// ตรงตัวแบบนี้ไม่มีปัญหาการชนกันของเวลาเลย ไม่ว่าจะล็อกอินถี่แค่ไหน
+function setActiveSession_(username, token) {
+  CacheService.getScriptCache().put('user_active_' + String(username).trim(), token, SESSION_TTL_SECONDS);
+}
+
 // 🧠 จำผลตรวจ session/rate limit ไว้ "ภายในคำขอเดียว" — doPost ใน Main.gs เรียก
 // requireSession ก่อนเข้า handler แล้ว handler ส่วนใหญ่ (getMyRecords, getOffenses,
 // getRpaStats, getAuditLogs, getUsersList, ทัณฑ์บน ฯลฯ) เรียกซ้ำอีกรอบ ทำให้เรียก
@@ -320,6 +333,12 @@ function getSession(token) {
     const revokedAt = parseInt(cache.get('user_rev_' + session.username) || '0', 10);
     // <= (ไม่ใช่ <) — token ที่ออกในมิลลิวินาทีเดียวกับเวลายกเลิกต้องถือว่าถูกยกเลิกด้วย ปลอดภัยไว้ก่อน (ผู้ใช้แค่ต้อง login ใหม่)
     if (revokedAt && (session.iat || 0) <= revokedAt) session = null;
+  }
+  if (session) {
+    // 🔒 1 บัญชีใช้พร้อมกันได้ทีละ 1 เครื่อง (ดู setActiveSession_ ด้านบน) — ถ้ามี token อื่นของบัญชีเดียวกัน
+    // ถูกตั้งเป็น "ล่าสุด" ไปแล้ว (ล็อกอินเครื่องอื่นสำเร็จทีหลัง) token นี้ถือว่าถูกแทนที่ ใช้ต่อไม่ได้ทันที
+    const activeToken = cache.get('user_active_' + session.username);
+    if (activeToken && activeToken !== token) session = null;
   }
   REQUEST_MEMO_.sessions[token] = session;
   return session;

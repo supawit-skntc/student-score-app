@@ -55,6 +55,9 @@ function handleLogin(username, password) {
 
       // 🔑 ออก session token ให้ frontend เก็บไว้แนบกับทุก request ถัดไป
       const token = createSession(user);
+      // 🔒 1 บัญชี ใช้งานพร้อมกันได้ทีละ 1 เครื่องเท่านั้น (คำขอผู้ใช้ 28/9/69) — ตั้ง token นี้เป็น "ล่าสุด"
+      // ของบัญชีนี้ทันที เซสชันเก่าที่เครื่อง/แท็บอื่นถืออยู่ใช้ไม่ได้ทันที (ดู setActiveSession_ ใน Utils.gs)
+      setActiveSession_(rowUser, token);
       cache.remove(attemptKey); // เข้าสำเร็จแล้ว — เคลียร์ตัวนับครั้งที่ผิดทิ้ง
 
       return {

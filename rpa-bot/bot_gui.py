@@ -383,25 +383,29 @@ class BotControlPanel(ctk.CTk):
             cancel("ยังเปิดไม่ได้", "ยังตั้งค่าบัญชีไม่ครบ 4 ช่อง — กรอกที่ขั้นตอนที่ 1 แล้วกด \"บันทึกการตั้งค่า\" ก่อน")
             return
 
-        # 🔒 เปิดสวิตช์นี้ = อนุญาตให้บอท "รันจริง" เองทุกวันตามเวลาโดยไม่มีใครนั่งยืนยันอีกเลย — เดิมมีแค่กล่อง
-        # ถาม "ใช่/ไม่ใช่" ซึ่งไม่ได้กันอะไรจริง ถ้าตั้ง PIN ไว้แล้วแต่จุดนี้ไม่ถาม เท่ากับใครก็ตามที่มาเจอโปรแกรม
-        # เปิดค้างอยู่ (ภัยคุกคามเดียวกับที่ PIN กันไว้ตอนกด "รันจริง" ด้วยมือ) เปิดสวิตช์นี้เองแล้วตั้งเวลาให้บอท
-        # รันจริงเองทีหลังได้เลย โดยไม่ต้องรู้ PIN ที่ตั้งไว้แม้แต่น้อย (คำถามผู้ใช้ 28/9/69) — ถ้าตั้ง PIN ไว้
-        # อย่างน้อย 1 ชุด จึงต้องกรอกให้ถูกก่อนเปิดสวิตช์นี้ได้เช่นเดียวกับตอนกด "รันจริง" ด้วยมือ
-        confirmed_by = None
-        if run_lock.has_pin():
-            pin = self._prompt_pin_dialog(
-                "ยืนยันก่อนเปิดรันอัตโนมัติ",
-                "กรอก PIN ที่ตรงชุดใดชุดหนึ่งก่อนเปิดให้บอทรันจริงเองอัตโนมัติตามเวลา",
+        # 🔒 เปิดสวิตช์นี้ = อนุญาตให้บอท "รันจริง" เองทุกวันตามเวลาโดยไม่มีใครนั่งยืนยันอีกเลย ต้องตั้ง PIN ไว้
+        # อย่างน้อย 1 ชุดก่อนถึงจะเปิดสวิตช์นี้ได้เลย (คำขอผู้ใช้ 28/9/69) — เดิมถ้ายังไม่เคยตั้ง PIN ไว้เลย จุดนี้
+        # ไม่ถามอะไรเลย เปิดสวิตช์ได้ปกติ เท่ากับใครก็ตามที่มาเจอโปรแกรมเปิดค้างอยู่เปิดสวิตช์นี้เองแล้วตั้งเวลาให้
+        # บอทรันจริงทีหลังได้เลยโดยไม่มีอะไรกันเลย — เหตุผลเดียวกับที่ "รันจริง" ด้วยมือก็บังคับต้องมี PIN ก่อนแล้ว
+        if not run_lock.has_pin():
+            cancel(
+                "ยังเปิดไม่ได้",
+                "ต้องตั้ง PIN อย่างน้อย 1 ชุดก่อนถึงจะเปิดให้บอทรันจริงอัตโนมัติตามเวลาได้ — ตั้งได้ที่หัวข้อ \"PIN ป้องกันการรันจริง\" ด้านบน",
             )
-            if pin is None:
-                self.schedule_switch.deselect()
-                return
-            confirmed_by = run_lock.verify_pin(pin)
-            if not confirmed_by:
-                messagebox.showerror("PIN ไม่ถูกต้อง", "PIN ที่กรอกไม่ตรงกับชุดที่มีอยู่ชุดใดเลย ยกเลิกการเปิดรันอัตโนมัติ")
-                self.schedule_switch.deselect()
-                return
+            return
+
+        pin = self._prompt_pin_dialog(
+            "ยืนยันก่อนเปิดรันอัตโนมัติ",
+            "กรอก PIN ที่ตรงชุดใดชุดหนึ่งก่อนเปิดให้บอทรันจริงเองอัตโนมัติตามเวลา",
+        )
+        if pin is None:
+            self.schedule_switch.deselect()
+            return
+        confirmed_by = run_lock.verify_pin(pin)
+        if not confirmed_by:
+            messagebox.showerror("PIN ไม่ถูกต้อง", "PIN ที่กรอกไม่ตรงกับชุดที่มีอยู่ชุดใดเลย ยกเลิกการเปิดรันอัตโนมัติ")
+            self.schedule_switch.deselect()
+            return
 
         joined = ", ".join(times)
         if not messagebox.askyesno(
@@ -545,12 +549,18 @@ class BotControlPanel(ctk.CTk):
         ).pack(side="left", fill="x", expand=True, padx=(0, 13), pady=11)
 
     # ==========================================================
-    # PIN ยืนยันก่อนรันจริง (ไม่บังคับ, ตั้งได้หลายชุด) — ดูคำอธิบายเต็มใน run_lock.py
+    # PIN ป้องกันการรันจริง (ตั้งได้หลายชุด) — ดูคำอธิบายเต็มใน run_lock.py
     # เดิมเป็นแค่บรรทัดข้อความเล็กๆ ปนอยู่ท้ายรายการช่องกรอก ผู้ใช้จริงหาไม่เจอ — เลยยกเป็น
     # กล่องของตัวเองที่มีขอบ/พื้นหลังต่างสี หัวข้อใหญ่เท่าหัวการ์ด ปักไว้เหนือปุ่มบันทึกเสมอ
     # (ดูหมายเหตุใต้ฟังก์ชันนี้) — และแทนที่ PIN ชุดเดียวด้วยรายการหลายชุด แยกชื่อเจ้าของ
     # (คำถามผู้ใช้ 28/9/69: "ถ้าคนรับผิดชอบหลักไม่อยู่ คนอื่นรันแทนได้ไหม") ใครใช้ PIN ของ
     # ตัวเองรันก็ได้ ไม่ต้องรู้ PIN ของคนอื่น
+    #
+    # 🙈 รายชื่อเจ้าของ PIN + ปุ่ม "เพิ่ม PIN" พับซ่อนไว้เป็นค่าเริ่มต้นเสมอ (คำขอผู้ใช้ 28/9/69) — เหลือแค่
+    # หัวข้อ + ปุ่ม "ตั้งค่า" ให้เห็นตลอด (ยังคลิกเดียวก็เจอ ไม่ย้อนกลับไปปัญหา "งง หาไม่เจอ" แบบเดิม) กันคน
+    # เดินผ่านมาเห็นรายชื่อเจ้าหน้าที่ที่มี PIN ลอยอยู่เฉยๆ บนจอ — ปุ่ม "เพิ่ม PIN" เองไม่ใช่ช่องโหว่จริงแม้
+    # โชว์อยู่ตลอด (การเพิ่ม/ลบต้องกรอก PIN เดิมที่มีอยู่ยืนยันก่อนเสมออยู่แล้ว ดู _confirm_current_pin) แต่ซ่อน
+    # ไว้ก็ไม่มีผลเสีย เผื่อคนไม่คุ้นเคยเข้าใจผิดว่ากดแล้วได้เลย
     # ==========================================================
     def _build_pin_section(self, parent):
         card = ctk.CTkFrame(
@@ -559,8 +569,10 @@ class BotControlPanel(ctk.CTk):
         )
         card.pack(side="bottom", fill="x", padx=20, pady=(0, 12))
 
+        self.pin_expanded = False
+
         head = ctk.CTkFrame(card, fg_color="transparent")
-        head.pack(fill="x", padx=16, pady=(14, 0))
+        head.pack(fill="x", padx=16, pady=(14, 14))
 
         title_col = ctk.CTkFrame(head, fg_color="transparent")
         title_col.pack(side="left", fill="x", expand=True)
@@ -570,29 +582,32 @@ class BotControlPanel(ctk.CTk):
         ).pack(anchor="w")
         self.pin_status_label = ctk.CTkLabel(
             title_col, text="", font=self.font_hint, text_color=COLORS["text_faint"], anchor="w",
+            wraplength=220, justify="left",
         )
         self.pin_status_label.pack(anchor="w", pady=(2, 0))
 
-        tag = ctk.CTkFrame(head, corner_radius=999, fg_color=COLORS["surface"], border_width=1, border_color=COLORS["border"])
-        tag.pack(side="right", anchor="n")
-        ctk.CTkLabel(
-            tag, text="ไม่บังคับ", font=self.font_hint, text_color=COLORS["text_faint"],
-        ).pack(padx=10, pady=3)
+        self.pin_toggle_btn = ctk.CTkButton(
+            head, text="ตั้งค่า ▾", command=self._toggle_pin_section,
+            font=self.font_small_button, height=30, width=88, corner_radius=8,
+            fg_color=COLORS["surface"], hover_color=COLORS["surface_muted"],
+            text_color=COLORS["text_muted"], border_width=1, border_color=COLORS["border"],
+        )
+        self.pin_toggle_btn.pack(side="right", anchor="n")
 
-        body_wrap = ctk.CTkFrame(card, fg_color="transparent")
-        body_wrap.pack(fill="x", padx=16, pady=(8, 14))
+        # หมายเหตุ: ตั้งใจไม่ pack() ตรงนี้ — พับซ่อนไว้เป็นค่าเริ่มต้นเสมอ (ดู _toggle_pin_section)
+        self.pin_body_wrap = ctk.CTkFrame(card, fg_color="transparent")
 
         ctk.CTkLabel(
-            body_wrap,
+            self.pin_body_wrap,
             text="กันคนอื่นมาเจอโปรแกรมเปิดค้างแล้วกดรันเอง — ตั้งได้หลายชุด แยกคนได้ ไม่ต้องแชร์ PIN เดียวกัน",
             font=self.font_hint, text_color=COLORS["text_muted"], anchor="w", justify="left", wraplength=320,
         ).pack(fill="x", pady=(0, 10))
 
-        self.pin_list_frame = ctk.CTkFrame(body_wrap, fg_color="transparent")
+        self.pin_list_frame = ctk.CTkFrame(self.pin_body_wrap, fg_color="transparent")
         self.pin_list_frame.pack(fill="x", pady=(0, 10))
 
         self.pin_add_btn = ctk.CTkButton(
-            body_wrap, text="+ เพิ่ม PIN", command=self._on_add_pin,
+            self.pin_body_wrap, text="+ เพิ่ม PIN", command=self._on_add_pin,
             font=self.font_button, height=38, corner_radius=8,
             fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"], text_color="white",
         )
@@ -606,12 +621,21 @@ class BotControlPanel(ctk.CTk):
     # ที่เลื่อนได้ ต้องเลื่อนจอลงไปเจอ ทำให้พลาดได้ง่าย ย้ายมาปักไว้เหนือปุ่มบันทึกให้เห็น
     # เสมอโดยไม่ต้องเลื่อน แลกกับพื้นที่เลื่อนของช่องกรอกที่เหลือน้อยลงเล็กน้อย
 
+    def _toggle_pin_section(self):
+        self.pin_expanded = not self.pin_expanded
+        if self.pin_expanded:
+            self.pin_body_wrap.pack(fill="x", padx=16, pady=(0, 14))
+            self.pin_toggle_btn.configure(text="ซ่อน ▴")
+        else:
+            self.pin_body_wrap.pack_forget()
+            self.pin_toggle_btn.configure(text="ตั้งค่า ▾")
+
     def _refresh_pin_status(self):
         names = run_lock.list_pins()
         has = len(names) > 0
         self.pin_status_label.configure(
-            text=f"● ตั้งไว้ {len(names)} ชุด" if has else "○ ยังไม่ได้ตั้ง",
-            text_color=COLORS["success"] if has else COLORS["text_faint"],
+            text=f"● ตั้งไว้ {len(names)} ชุด" if has else "○ ยังไม่ได้ตั้ง — ต้องตั้งก่อนถึงจะรันจริงได้",
+            text_color=COLORS["success"] if has else COLORS["warning"],
         )
 
         for w in self.pin_list_frame.winfo_children():
@@ -1062,10 +1086,23 @@ class BotControlPanel(ctk.CTk):
             messagebox.showwarning("ยังรันไม่ได้", hint)
             return
 
-        # 🔒 PIN ยืนยันก่อนรันจริงด้วยมือ (ไม่บังคับตั้ง — ดู run_lock.py) กันคนอื่นมาเจอโปรแกรมที่เปิดค้างอยู่
-        # แล้วกด "รันจริง" เอง ไม่ถามตอนทดสอบ (ไม่บันทึกข้อมูลจริง ไม่มีอะไรเสียหาย) และไม่ถามตอนรันอัตโนมัติ
-        # ตามเวลา (auto=True) เพราะผู้ใช้ยืนยันไว้ล่วงหน้าแล้วตอนเปิดสวิตช์ในขั้นตอนที่ 2
-        if not dry_run and not auto and run_lock.has_pin():
+        # 🔒 ต้องตั้ง PIN ไว้อย่างน้อย 1 ชุดก่อนถึงจะ "รันจริง" ได้เลย ไม่ว่าจะกดเองหรือรันอัตโนมัติตามเวลา (คำขอ
+        # ผู้ใช้ 28/9/69 — เดิมถ้ายังไม่เคยตั้ง PIN เลยสักชุด ปุ่ม "รันจริง"/สวิตช์อัตโนมัติทำงานได้ปกติโดยไม่ต้อง
+        # ยืนยันอะไรเลย เท่ากับไม่มีการป้องกันจริงตั้งแต่แรก) — "ทดสอบ" ไม่ต้องมี PIN เสมอ (ไม่บันทึกข้อมูลจริง
+        # ไม่มีอะไรเสียหาย และจำเป็นสำหรับตรวจสอบตอนติดตั้งเครื่องใหม่ครั้งแรกที่ยังไม่มี PIN ให้กรอกอยู่แล้ว)
+        if not dry_run and not run_lock.has_pin():
+            if auto:
+                self._append_log("[อัตโนมัติ] ข้ามรอบนี้ — ยังไม่ได้ตั้ง PIN กรุณาตั้ง PIN อย่างน้อย 1 ชุดก่อนถึงจะรันจริงอัตโนมัติได้")
+            else:
+                messagebox.showwarning(
+                    "ยังรันจริงไม่ได้",
+                    "ต้องตั้ง PIN อย่างน้อย 1 ชุดก่อนถึงจะกด \"รันจริง\" ได้ — ตั้งได้ที่หัวข้อ \"PIN ป้องกันการรันจริง\" ในขั้นตอนที่ 1",
+                )
+            return
+
+        # ยืนยัน PIN ก่อนรันจริงด้วยมือ (กรอกชุดใดก็ได้ที่ตรงกับที่ตั้งไว้) — ไม่ถามตอนรันอัตโนมัติตามเวลา
+        # (auto=True) เพราะผู้ใช้ยืนยันไว้ล่วงหน้าแล้วตอนเปิดสวิตช์ในขั้นตอนที่ 2 (ซึ่งก็ต้องมี PIN ก่อนเช่นกัน)
+        if not dry_run and not auto:
             pin = self._prompt_pin_dialog(
                 "ยืนยันก่อนรันจริง",
                 "กรอก PIN ที่ตรงชุดใดชุดหนึ่งเพื่อยืนยันก่อนบันทึกข้อมูลลงระบบ RMS จริง",

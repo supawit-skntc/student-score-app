@@ -29,7 +29,8 @@ def t(name, cond, extra=""):
 
 # --- stubs: เครดิตครบเสมอ / ไม่เปิดกล่องข้อความจริง / ไม่รันโปรเซสจริง ---
 bot_gui.keyring.get_password = lambda service, key: "x"
-messagebox.showwarning = lambda *a, **k: None
+warnings = []
+messagebox.showwarning = lambda title, text: warnings.append((title, text))
 messagebox.showinfo = lambda *a, **k: None
 errors = []
 messagebox.showerror = lambda title, text: errors.append((title, text))
@@ -82,6 +83,11 @@ def reset():
     FakePopen.calls.clear()
     prompt_calls.clear()
     errors.clear()
+    warnings.clear()
+    app.log_box.configure(state="normal")
+    app.log_box.delete("1.0", "end")
+    app.log_box.configure(state="disabled")
+    app._has_real_log = False
     app.process = None
     app.is_running = False
 
@@ -91,19 +97,22 @@ def run(dry_run, auto=False):
     app._run_bot(dry_run=dry_run, auto=auto)
 
 
-# ---------------------------------------------------------------- A) ยังไม่ได้ตั้ง PIN เลย — ไม่ถามเลยไม่ว่ากรณีไหน
+# ---------------------------------------------------------------- A) ยังไม่ได้ตั้ง PIN เลย — ทดสอบยังรันได้ตามปกติ
+# แต่รันจริง (มือ/อัตโนมัติ) ต้องถูกบล็อกไว้ก่อนเสมอ (คำขอผู้ใช้ 28/9/69 — เดิมไม่มี PIN ก็รันจริงได้เฉยๆ)
 run_lock.has_pin = lambda: False
 run(dry_run=True, auto=False)
 t("no pin set: dry-run never prompts", len(prompt_calls) == 0)
 t("no pin set: dry-run still runs (Popen called)", len(FakePopen.calls) == 1)
 
 run(dry_run=False, auto=False)
-t("no pin set: manual real-run never prompts", len(prompt_calls) == 0)
-t("no pin set: manual real-run still runs", len(FakePopen.calls) == 1)
+t("no pin set: manual real-run never prompts (blocked before reaching the pin dialog)", len(prompt_calls) == 0)
+t("no pin set: manual real-run is blocked entirely", len(FakePopen.calls) == 0)
+t("no pin set: manual real-run shows a warning telling the user to set up a PIN", len(warnings) == 1 and "PIN" in warnings[0][1])
 
 run(dry_run=False, auto=True)
-t("no pin set: scheduled real-run never prompts", len(prompt_calls) == 0)
-t("no pin set: scheduled real-run still runs", len(FakePopen.calls) == 1)
+t("no pin set: scheduled real-run never prompts (auto can't interactively ask)", len(prompt_calls) == 0)
+t("no pin set: scheduled real-run is blocked entirely (skipped, not run unprotected)", len(FakePopen.calls) == 0)
+t("no pin set: scheduled real-run logs why it was skipped", "ยังไม่ได้ตั้ง PIN" in app.log_box.get("1.0", "end"))
 
 # ---------------------------------------------------------------- B) ตั้ง PIN ไว้แล้ว
 run_lock.has_pin = lambda: True

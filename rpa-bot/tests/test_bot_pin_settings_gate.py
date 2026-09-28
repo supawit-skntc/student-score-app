@@ -177,6 +177,21 @@ confirm_queue.append(True)
 app._on_remove_pin("ครูเอ")
 t("removing the last remaining pin clears has_pin() back to False", run_lock.has_pin() is False)
 
+# ---------------------------------------------------------------- H) รายชื่อ/ปุ่มเพิ่ม PIN พับซ่อนไว้เป็นค่าเริ่มต้นเสมอ (คำขอผู้ใช้ 28/9/69)
+# ใช้ winfo_manager() (คืน "pack" ถ้าถูก pack() ไว้อยู่ หรือ "" ถ้า pack_forget() ไปแล้ว) แทน
+# winfo_ismapped() เพราะอย่างหลังขึ้นกับว่าหน้าต่างถูกวาดขึ้นจอจริงหรือไม่ ซึ่งไม่แน่นอนในสภาพแวดล้อมทดสอบ
+app.update()
+t("pin section starts collapsed (pin_expanded False)", app.pin_expanded is False)
+t("pin section starts collapsed (body frame not packed)", app.pin_body_wrap.winfo_manager() == "")
+app._toggle_pin_section()
+app.update()
+t("clicking the toggle expands the section", app.pin_expanded is True and app.pin_body_wrap.winfo_manager() == "pack")
+t("toggle button label flips to \"hide\"", "ซ่อน" in app.pin_toggle_btn.cget("text"))
+app._toggle_pin_section()
+app.update()
+t("clicking again collapses it back", app.pin_expanded is False and app.pin_body_wrap.winfo_manager() == "")
+t("toggle button label flips back to \"settings\"", "ตั้งค่า" in app.pin_toggle_btn.cget("text"))
+
 app.destroy()
 print(f"\n{ok} passed, {fail} failed")
 sys.exit(1 if fail else 0)
